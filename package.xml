@@ -13,7 +13,7 @@
 
     <license file="LICENSE">LGPL-2.1-or-later</license>
 
-    <icon>Resources/Icons/PartDesignUpgrade.svg</icon>
+    <icon>Resources/Icons/PartDesignUpgrade.png</icon>
 
     <url type="repository" branch="main">https://github.com/cipawow-ship-it/PartDesignUpgrade</url>
     <url type="readme">https://github.com/cipawow-ship-it/PartDesignUpgrade/raw/main/README.md</url>
