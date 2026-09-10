@@ -1,6 +1,6 @@
 # PartDesignUpgrade
 
-Extends the **PartDesign** workbench with seven helpers:
+Extends the **PartDesign** workbench with five helpers:
 
 - **Create Pipe** — sweep a parametric profile (circle, square, triangle,
   pentagon, hexagon, octagon) along a sketch or a set of edges. Supports
@@ -10,14 +10,6 @@ Extends the **PartDesign** workbench with seven helpers:
   created.
 - **Subtractive Pipe** — the same sweep but the profile is **removed** from
   the body (like a pocket following a path): a *subtractive* feature.
-- **Create Rib** — re-implements the **Rib** tool that was removed from
-  PartDesign in FreeCAD 1.0: a stiffening plate is created from a sketch
-  profile (open or closed wire) by extruding it *perpendicular to the sketch
-  plane* by the requested thickness. Options: *midplane* (thickness split
-  on both sides) and *reversed*. The rib is fused with the body as an
-  *additive* feature.
-- **Subtractive Rib** — same extrusion but **removed** from the body
-  (a groove/channel following the sketch): a *subtractive* feature.
 - **Create Rib Between Faces** — build a stiffening rib *without a sketch*:
   select **two faces** and a plate is created **between them**. Two **angled
   planar faces** (a corner) give a triangular gusset whose two long edges rest
@@ -58,15 +50,6 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
    Part Design Helper Features toolbar.
 3. Set profile shape/size, rotation, offset and wall thickness — a live
    preview follows the values.
-4. Click OK.
-
-### Create Rib / Subtractive Rib
-1. Select a sketch whose profile (open or closed wire) defines the rib.
-   The sketch plane becomes the rib's mid-plane.
-2. Click **Create Rib** (adds) or **Subtractive Rib** (removes).
-3. Set the thickness (applied perpendicular to the sketch plane), enable
-   *Midplane* to split it on both sides, or *Reversed* to flip the normal
-   direction — a live preview follows the values.
 4. Click OK.
 
 ### Assembly Cut
