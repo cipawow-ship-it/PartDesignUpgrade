@@ -80,6 +80,28 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 1. Select a body (or any shape with volume).
 2. Click **Weight / Volume** and pick the material density.
 
+## Screenshots
+
+### Create Pipe (additive)
+
+![Create Pipe (additive)](images/create-pipe.png)
+
+### Subtractive Pipe
+
+![Subtractive Pipe](images/subtractive-pipe.png)
+
+### Create Rib Between Faces — angled faces
+
+![Create Rib Between Faces (angled faces)](images/rib-between-faces.png)
+
+### Create Rib Between Faces — plane + cylinder
+
+![Create Rib Between Faces (plane + cylinder)](images/rib-cylinder.png)
+
+### Weight / Volume
+
+![Weight / Volume](images/weight-volume.png)
+
 ## Compatibility
 
 FreeCAD >= 1.1.0 (PySide6).
