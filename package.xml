@@ -2,9 +2,9 @@
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
 
     <name>PartDesignUpgrade</name>
-    <description>Extends the PartDesign workbench with four helpers: create or subtract parametric pipes along sketch paths, cut multiple bodies with a single sketch, and compute body weight/volume with a material density selector.</description>
-    <version>0.1.0</version>
-    <date>2026-09-05</date>
+    <description>Extends the PartDesign workbench with seven helpers: create or subtract parametric pipes along sketch paths, create stiffening ribs from a sketch or between two selected faces (angled corner or plane + cylinder), cut multiple bodies with a single sketch, and compute body weight/volume with a material density selector.</description>
+    <version>0.2.0</version>
+    <date>2026-09-10</date>
 
     <freecadmin>1.1.0</freecadmin>
 

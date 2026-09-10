@@ -20,6 +20,7 @@ class PartDesignUpgradeWorkbench(Gui.Workbench):
         cmds = [
             "PartDesignUpgrade_Pipe",
             "PartDesignUpgrade_SubtractPipe",
+            "PartDesignUpgrade_FaceRib",
             "PartDesignUpgrade_Cut",
             "PartDesignUpgrade_Weight",
         ]

@@ -82,6 +82,32 @@ class _SubtractPipeCommand(_BaseCommand):
         create_pipe(subtractive=True)
 
 
+class _FaceRibCommand(_BaseCommand):
+    def __init__(self):
+        super().__init__({
+            "MenuText": _tr("Create Rib Between Faces"),
+            "ToolTip": _tr(
+                "Create a stiffening rib between two selected faces: an angled corner, "
+                "or a flat face and a cylinder"),
+            "Pixmap": _icon("FaceRib_icon.png"),
+            "StatusTip": _tr("Create a rib between two selected faces"),
+        })
+
+    def IsActive(self):
+        if FreeCAD.ActiveDocument is None:
+            return False
+        for se in Gui.Selection.getSelectionEx():
+            if se.Object is None:
+                continue
+            if any(n.startswith("Face") for n in (se.SubElementNames or [])):
+                return True
+        return False
+
+    def Activated(self):
+        from .face_rib_core import create_face_rib
+        create_face_rib()
+
+
 class _CutCommand(_BaseCommand):
     def __init__(self):
         super().__init__({
@@ -131,6 +157,7 @@ def _get_commands():
     return [
         ("PartDesignUpgrade_Pipe", _PipeCommand()),
         ("PartDesignUpgrade_SubtractPipe", _SubtractPipeCommand()),
+        ("PartDesignUpgrade_FaceRib", _FaceRibCommand()),
         ("PartDesignUpgrade_Cut", _CutCommand()),
         ("PartDesignUpgrade_Weight", _WeightCommand()),
     ]
