@@ -127,6 +127,10 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 
 ![Create Rib Between Faces (plane + cylinder)](images/rib-cylinder.png)
 
+### Mirror (Symmetry)
+
+![Mirror (Symmetry)](images/symmetry.png)
+
 ### Weight / Volume
 
 ![Weight / Volume](images/weight-volume.png)
