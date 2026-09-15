@@ -19,7 +19,9 @@ class FormsViewProvider:
             return "PartDesign_AdditivePipe"
         if getattr(t, "Type", "") == "SubtractivePipeFeature":
             return "PartDesign_SubtractivePipe"
-        return os.path.join(_ROOT, "Resources", "Icons", "PartDesignUpgrade.svg")
+        if getattr(t, "Type", "") in ("FaceRibFeature", "AdditiveFaceRibFeature"):
+            return os.path.join(_ROOT, "Resources", "Icons", "FaceRib_icon.png")
+        return os.path.join(_ROOT, "Resources", "Icons", "PartDesignUpgrade.png")
 
     def attach(self, vobj):
         self.Object = vobj.Object

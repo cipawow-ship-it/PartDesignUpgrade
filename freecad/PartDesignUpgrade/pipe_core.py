@@ -242,6 +242,244 @@ def build_pipe_from_wire(wire, profile_type, dimension, rotation=0.0, offset=Non
 
 
 # =============================================================================
+# Native PartDesign pipe (AdditivePipe / SubtractivePipe)
+# =============================================================================
+
+_POLY_SIDES = {"Square": 4, "Triangle": 3, "Pentagon": 5, "Hexagon": 6, "Octagon": 8}
+
+
+def _load_profile_lib():
+    """Return the module exposing makeRegularPolygon (FreeCAD's sketcher lib)."""
+    from ProfileLib import RegularPolygon
+    return RegularPolygon
+
+
+def _build_fc_profile(sk, ptype, dim, rot_deg=0.0):
+    """Draw a fully constrained profile in a sketch's local plane.
+
+    The profile is the 'pipe cross-section': a circle (radius = *dim*) or a
+    regular polygon (side = *dim*). Polygons are built with the standard
+    sketcher construction (inscribed in a construction circle) via
+    ProfileLib.RegularPolygon, then fully constrained with:
+
+      - construction circle radius (drives the size),
+      - centre distances from the sketch origin (X and Y),
+      - one horizontal distance of the first corner (drives the rotation;
+        the corner already sits on the circle, so a second vertical distance
+        would be redundant).
+
+    *rot_deg* rotates the cross-section around the pipe axis (the sketch
+    normal).
+    """
+    import math as _math
+
+    from Sketcher import Constraint  # noqa: PLC0415
+
+    if ptype == "Circle":
+        sk.addGeometry(Part.Circle(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), dim))
+        sk.Document.recompute()
+        sk.addConstraint(Constraint("Radius", 0, dim))
+        sk.Document.recompute()
+        sk.addConstraint(Constraint("DistanceX", 0, 3, 0.0))
+        sk.Document.recompute()
+        sk.addConstraint(Constraint("DistanceY", 0, 3, 0.0))
+        sk.Document.recompute()
+        return
+
+    sides = _POLY_SIDES.get(ptype)
+    if sides is None:
+        raise ValueError("Unknown profile type: {}".format(ptype))
+
+    rot = _math.radians(rot_deg)
+    if ptype == "Square":
+        # mirror _profile_points: the preview draws the square with its
+        # corners at 45 deg so that *dim* is the side length
+        rot += _math.pi / 4.0
+    R = dim / (2.0 * _math.sin(_math.pi / sides))
+    first = FreeCAD.Vector(R * _math.cos(rot), R * _math.sin(rot), 0.0)
+
+    RegularPolygon = _load_profile_lib()
+    RegularPolygon.makeRegularPolygon(sk, sides, FreeCAD.Vector(0, 0, 0), first)
+    sk.Document.recompute()
+
+    nc = len(sk.Geometry) - 1  # construction circle is the last geometry
+    sk.addConstraint(Constraint("Radius", nc, R))
+    sk.Document.recompute()
+    sk.addConstraint(Constraint("DistanceX", nc, 3, 0.0))
+    sk.Document.recompute()
+    sk.addConstraint(Constraint("DistanceY", nc, 3, 0.0))
+    sk.Document.recompute()
+    # the first corner is already pinned onto the construction circle (the
+    # PointOnObject added by ProfileLib), so a single horizontal distance
+    # fixes the rotation; a second vertical distance would be redundant.
+    sk.addConstraint(Constraint("DistanceX", 0, 1, R * _math.cos(rot)))
+    sk.Document.recompute()
+
+    # let FreeCAD's solver drop any constraint it considers redundant
+    try:
+        sk.autoRemoveRedundants()
+        sk.Document.recompute()
+    except Exception:
+        pass
+
+
+def _inner_dimension(ptype, dim, wall):
+    """Dimension of the inner cross-section for a wall of thickness *wall*."""
+    if wall <= 0:
+        return 0.0
+    if ptype == "Circle":
+        return dim - wall
+    sides = _POLY_SIDES.get(ptype)
+    if sides is None:
+        return 0.0
+    apothem = dim / (2.0 * math.tan(math.pi / sides))
+    inner_apothem = apothem - wall
+    if inner_apothem <= 0:
+        return 0.0
+    return 2.0 * inner_apothem * math.tan(math.pi / sides)
+
+
+def _create_native_pipe(doc, body, wire, profile_type, dimension, rotation_deg, offset, corner_name, wall_thickness, subtractive, spine_refs=None):
+    """Create a native PartDesign pipe on a body.
+
+    The profile is drawn 'perpendicular to the path': a datum plane is placed
+    at the path start with its normal along the first tangent, and the fully
+    constrained profile sketch lives on that plane. The native AdditivePipe /
+    SubtractivePipe receives the profile directly as the sketch reference
+    (Profile = (sketch, [])); the spine is the path the user pre-selected when
+    starting the command (*spine_refs*, a list of (object, [edge names])),
+    passed unchanged to the native pipe (a bare (object, [names]) when a
+    single object owns all selected edges). No carrier object is created.
+
+    Returns the last operation (the feature that should become the Tip).
+    """
+    tan = _path_tangent(wire)
+    if tan is None:
+        raise ValueError(_tr("Could not determine the direction of the path"))
+    base = wire.OrderedEdges[0].Vertexes[0].Point + (offset or FreeCAD.Vector(0, 0, 0))
+
+    created = []
+
+    def _rollback():
+        # keep the datum plane and the profile sketches (hidden) so the user
+        # can inspect them after a failure; only remove the broken pipe
+        # operation(s) that were already created
+        for n in created:
+            try:
+                obj = doc.getObject(n)
+                if obj is None:
+                    continue
+                if "AdditivePipe" in obj.TypeId or "SubtractivePipe" in obj.TypeId:
+                    doc.removeObject(n)
+                    continue
+                if obj.ViewObject is not None:
+                    obj.ViewObject.Visibility = False
+            except Exception:
+                pass
+
+    try:
+        # 1) datum plane perpendicular to the path
+        plane = doc.addObject("PartDesign::Plane", "PipePlane")
+        created.append(plane.Name)
+        body.addObject(plane)
+        plane.MapMode = "Deactivated"
+        plane.Placement = FreeCAD.Placement(base, FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), tan))
+        doc.recompute()
+
+        def _profile_sketch(name):
+            sk = doc.addObject("Sketcher::SketchObject", name)
+            created.append(sk.Name)
+            body.addObject(sk)
+            sk.AttachmentSupport = [(plane, "")]
+            sk.MapMode = "FlatFace"
+            doc.recompute()
+            return sk
+
+        # 2) fully constrained profile sketch on the plane
+        sk = _profile_sketch("PipeProfile")
+        _build_fc_profile(sk, profile_type, dimension, rotation_deg)
+
+        # 3) spine: the pre-selected path edges, unchanged. A single object is
+        #    a bare (object, [edge names]) reference (the user-proven form);
+        #    several objects become a list of such pairs. No extra carrier
+        #    object is needed either way.
+        if len(spine_refs) == 1:
+            spine = (spine_refs[0][0], list(spine_refs[0][1]))
+        else:
+            spine = [(o, list(n)) for o, n in spine_refs if o is not None and n]
+
+        # the fully constrained profile sketch IS the pipe profile
+        prof = (sk, [])
+
+        _TRANSITION_FALLBACKS = ("Right corner", "Round corner")
+
+        def _pipe_feature(feature_type, fname, prof_ref, policy="add"):
+            op = doc.addObject(feature_type, fname)
+            created.append(op.Name)
+            body.addObject(op)
+            op.Profile = prof_ref
+            op.Spine = spine
+            op.Transition = corner_name
+            doc.recompute()
+            # 'Transformed' re-orients the cross-section instantly at a sharp
+            # path kink and can self-intersect, yielding an invalid/null
+            # shape; retry with a kink-safe transition (mirrors the retry
+            # already done by build_pipe_from_wire for the live preview).
+            shp = getattr(op, "Shape", None)
+            if (shp is None or shp.isNull() or not shp.isValid()) and corner_name not in _TRANSITION_FALLBACKS:
+                for alt in _TRANSITION_FALLBACKS:
+                    op.Transition = alt
+                    doc.recompute()
+                    shp = getattr(op, "Shape", None)
+                    if shp is not None and not shp.isNull() and shp.isValid():
+                        FreeCAD.Console.PrintWarning(
+                            _tr("Corner transition '{}' not possible on this path: "
+                                "using '{}'.").format(corner_name, alt) + "\n")
+                        break
+            if shp is None or shp.isNull() or not shp.isValid():
+                raise ValueError(
+                    _tr("The native pipe could not be built on this path "
+                        "(fatal error). Use a single chain of connected edges, "
+                        "or change the corner transition or profile size."))
+            return op
+
+        def _hide(obj):
+            # helper operands (datum plane, profile sketches, wire carriers)
+            # must not stay visible: only the pipe feature/body remains shown
+            try:
+                if obj is not None and obj.ViewObject is not None:
+                    obj.ViewObject.Visibility = False
+            except Exception:
+                pass
+
+        # solid tool (covers both additive and subtractive modes)
+        tool = _pipe_feature(
+            "PartDesign::SubtractivePipe" if subtractive else "PartDesign::AdditivePipe",
+            "PipeCut" if subtractive else "Pipe",
+            prof,
+        )
+        _hide(plane)
+        _hide(sk)
+        if wall_thickness <= 0 or subtractive:
+            return tool
+
+        # 4) hollowness: additive outer pipe + subtractive inner pipe
+        inner_dim = _inner_dimension(profile_type, dimension, wall_thickness)
+        if inner_dim <= 0:
+            FreeCAD.Console.PrintWarning(
+                _tr("Wall thickness too large for the profile: keeping a solid pipe.") + "\n")
+            return tool
+        sk_in = _profile_sketch("PipeProfileInner")
+        _build_fc_profile(sk_in, profile_type, inner_dim, rotation_deg)
+        _hide(sk_in)
+        cut = _pipe_feature("PartDesign::SubtractivePipe", "PipeCut", (sk_in, []))
+        return cut
+    except Exception:
+        _rollback()
+        raise
+
+
+# =============================================================================
 # Pipe features
 # =============================================================================
 
@@ -736,37 +974,18 @@ def create_pipe(subtractive=False):
             wire = _build_wire()
             offset = _offset_from_dialog(_path_tangent(wire), off_xy[0], off_xy[1])
             if body is not None:
+                # ---- native PartDesign pipe ----
                 old_tip = getattr(body, "Tip", None)
-                if subtractive:
-                    feat = doc.addObject("PartDesign::FeatureSubtractivePython", "PipeCut")
-                    SubtractivePipeFeature(feat)
-                else:
-                    feat = doc.addObject("PartDesign::FeatureAdditivePython", "Pipe")
-                    AdditivePipeFeature(feat)
-                if sketch is not None:
-                    feat.PathSketch = sketch
-                else:
-                    feat.PathEdges = edge_refs
-                feat.ProfileType = ptype
-                feat.ProfileDimension = dim
-                feat.ProfileRotation = rot_deg
-                feat.ProfileOffset = offset
-                feat.CornerMode = corner
-                feat.WallThickness = thick
-                body.addObject(feat)
-                _set_view_object_ok(feat)
+                newfeat = _create_native_pipe(
+                    doc, body, wire, ptype, dim, rot_deg,
+                    offset, corner, thick, subtractive,
+                    spine_refs=edge_refs or None)
                 doc.recompute()
-                # move the display to the last operation (the Tip) so the
-                # final result is shown in the body, for additive and
-                # subtractive pipes alike
                 try:
-                    body.Tip = feat
+                    body.Tip = newfeat
                 except Exception:
                     pass
-                newfeat = feat
                 doc.recompute()
-                # keep the body color: the new tip would otherwise fall back
-                # to the default gray material
                 try:
                     if old_tip is not None and old_tip.ViewObject is not None:
                         _copy_appearance(old_tip.ViewObject, newfeat.ViewObject)
@@ -779,6 +998,7 @@ def create_pipe(subtractive=False):
                     FreeCAD.Console.PrintMessage(
                         _tr("Additive pipe added to '{}'.").format(body.Label) + "\n")
             else:
+                # ---- standalone pipe (no body): legacy FeaturePython ----
                 if subtractive:
                     FreeCAD.Console.PrintError(
                         _tr("Subtractive pipe needs a PartDesign body to cut.") + "\n")

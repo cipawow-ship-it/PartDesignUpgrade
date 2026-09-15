@@ -9,6 +9,8 @@ class PartDesignUpgradeManipulator:
         return [
             {"append": "PartDesignUpgrade_Pipe", "toolBar": "Part Design Helper Features"},
             {"append": "PartDesignUpgrade_SubtractPipe", "toolBar": "Part Design Helper Features"},
+            {"append": "PartDesignUpgrade_FaceRib", "toolBar": "Part Design Helper Features"},
             {"append": "PartDesignUpgrade_Cut", "toolBar": "Part Design Helper Features"},
+            {"append": "PartDesignUpgrade_Mirror", "toolBar": "Part Design Helper Features"},
             {"append": "PartDesignUpgrade_Weight", "toolBar": "Part Design Helper Features"},
         ]

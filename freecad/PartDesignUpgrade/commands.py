@@ -82,6 +82,32 @@ class _SubtractPipeCommand(_BaseCommand):
         create_pipe(subtractive=True)
 
 
+class _FaceRibCommand(_BaseCommand):
+    def __init__(self):
+        super().__init__({
+            "MenuText": _tr("Create Rib Between Faces"),
+            "ToolTip": _tr(
+                "Create a stiffening rib between two selected faces: an angled corner, "
+                "or a flat face and a cylinder"),
+            "Pixmap": _icon("FaceRib_icon.png"),
+            "StatusTip": _tr("Create a rib between two selected faces"),
+        })
+
+    def IsActive(self):
+        if FreeCAD.ActiveDocument is None:
+            return False
+        for se in Gui.Selection.getSelectionEx():
+            if se.Object is None:
+                continue
+            if any(n.startswith("Face") for n in (se.SubElementNames or [])):
+                return True
+        return False
+
+    def Activated(self):
+        from .face_rib_core import create_face_rib
+        create_face_rib()
+
+
 class _CutCommand(_BaseCommand):
     def __init__(self):
         super().__init__({
@@ -99,6 +125,78 @@ class _CutCommand(_BaseCommand):
     def Activated(self):
         from .assemblycut import assembly_cut
         assembly_cut()
+
+
+def _mirror_body():
+    import FreeCADGui as Gui
+    doc = FreeCAD.ActiveDocument
+    body = None
+    try:
+        body = Gui.activeBody()
+    except Exception:
+        body = None
+    if body is None:
+        for se in Gui.Selection.getSelection():
+            if se is not None and se.TypeId == "PartDesign::Body":
+                body = se
+                break
+    if body is None and doc is not None:
+        for o in doc.Objects:
+            if o is not None and o.TypeId == "PartDesign::Body":
+                if body is not None:
+                    return None
+                body = o
+    return body
+
+
+class _SymmetryCommand(_BaseCommand):
+    def __init__(self):
+        super().__init__({
+            "MenuText": _tr("Mirror (Symmetry)"),
+            "ToolTip": _tr("Mirror the solid around a plane, axis or point selected in a dialog"),
+            "Pixmap": _icon("Mirror_icon.svg"),
+            "StatusTip": _tr("Mirror the solid around the reference chosen in the dialog"),
+        })
+
+    def IsActive(self):
+        return _mirror_body() is not None
+
+    def Activated(self):
+        body = _mirror_body()
+        if body is None:
+            return
+        doc = body.Document
+        from .mirror_dialog import run_mirror_dialog
+        run_mirror_dialog(doc, body)
+
+
+class _AutoSymmetryCommand(_BaseCommand):
+    def __init__(self):
+        super().__init__({
+            "MenuText": _tr("Automatic symmetry"),
+            "ToolTip": _tr("Mirror the solid automatically around the chosen planes/axes/point: every new feature updates the mirror"),
+            "Pixmap": _icon("Mirror_icon.svg"),
+            "StatusTip": _tr("Automatically mirror the body"),
+            "Checkable": True,
+        })
+
+    def IsActive(self):
+        return FreeCAD.ActiveDocument is not None
+
+    def Activated(self):
+        from .symmetry import _active_body, find_reference
+        doc = FreeCAD.ActiveDocument
+        if doc is None:
+            return
+        body = _active_body(doc)
+        if body is None:
+            return
+        if find_reference(doc) is None:
+            from .mirror_dialog import run_mirror_dialog
+            run_mirror_dialog(doc, body)
+            return
+        from .symmetry_panel import run_symmetry_panel
+        run_symmetry_panel(doc, body, enabled=True)
 
 
 class _WeightCommand(_BaseCommand):
@@ -131,7 +229,10 @@ def _get_commands():
     return [
         ("PartDesignUpgrade_Pipe", _PipeCommand()),
         ("PartDesignUpgrade_SubtractPipe", _SubtractPipeCommand()),
+        ("PartDesignUpgrade_FaceRib", _FaceRibCommand()),
         ("PartDesignUpgrade_Cut", _CutCommand()),
+        ("PartDesignUpgrade_Mirror", _SymmetryCommand()),
+        ("PartDesignUpgrade_AutoMirror", _AutoSymmetryCommand()),
         ("PartDesignUpgrade_Weight", _WeightCommand()),
     ]
 

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#f0f0f0" rx="6"/>
+  <!-- symmetry axis -->
+  <line x1="32" y1="5" x2="32" y2="59" stroke="#e67c00" stroke-width="2" stroke-dasharray="4 3"/>
+  <!-- drawn side -->
+  <path d="M8 12 h18 v8 h-12 v24 h12 v8 H8 Z" fill="#9aa7b3" stroke="#3f4b57" stroke-width="2" stroke-linejoin="round"/>
+  <!-- mirrored side -->
+  <path d="M56 12 H38 v8 h12 v24 h-12 v8 h18 Z" fill="#d8e4f0" stroke="#2a7ab5" stroke-width="2" stroke-linejoin="round"/>
+  <!-- mirror arrow -->
+  <path d="M22 31 h15 M37 27 l4 4 -4 4" fill="none" stroke="#2a7ab5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

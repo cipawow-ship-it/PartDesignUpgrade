@@ -14,13 +14,16 @@ class PartDesignUpgradeWorkbench(Gui.Workbench):
     UI lives in the Part Design Helper Features toolbar."""
 
     MenuText = _tr("Part Design Upgrade")
-    ToolTip = _tr("PartDesign helpers: pipe, assembly cut and weight/volume")
+    ToolTip = _tr("PartDesign helpers: pipe, subtractive pipe, rib, assembly cut, symmetry mirror, weight/volume")
 
     def Initialize(self):
         cmds = [
             "PartDesignUpgrade_Pipe",
             "PartDesignUpgrade_SubtractPipe",
+            "PartDesignUpgrade_FaceRib",
             "PartDesignUpgrade_Cut",
+            "PartDesignUpgrade_Mirror",
+            "PartDesignUpgrade_AutoMirror",
             "PartDesignUpgrade_Weight",
         ]
         self.appendToolbar("PartDesignUpgrade", cmds)
