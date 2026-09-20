@@ -284,7 +284,7 @@ class _SymmetryFeature:
                 ("AxisX", "Rotate 180 deg about the X axis"),
                 ("AxisY", "Rotate 180 deg about the Y axis"),
                 ("AxisZ", "Rotate 180 deg about the Z axis"),
-                ("RefPoint", "Invert through a point"),
+                ("RefPoint", "Obsolete: point symmetry is no longer supported"),
                 ("OffsetX", "Offset along X from the body centre"),
                 ("OffsetY", "Offset along Y from the body centre"),
                 ("OffsetZ", "Offset along Z from the body centre"))
@@ -300,6 +300,11 @@ class _SymmetryFeature:
         for pn in ("OffsetX", "OffsetY", "OffsetZ"):
             try:
                 setattr(obj, pn, 0.0)
+            except Exception:
+                pass
+        for pn in ("RefPoint",):
+            try:
+                obj.setPropertyStatus(pn, "Hidden")
             except Exception:
                 pass
 

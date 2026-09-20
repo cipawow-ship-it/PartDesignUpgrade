@@ -1,6 +1,7 @@
 # PartDesignUpgrade
 
-Extends the **PartDesign** workbench with seven helpers:
+Extends the **PartDesign** workbench with six helpers (the seventh button,
+*Collision detector*, comes from the companion **CollisionDetector** addon):
 
 - **Create Pipe** — sweep a parametric profile (circle, square, triangle,
   pentagon, hexagon, octagon) along a sketch or a set of edges. Supports
@@ -24,14 +25,14 @@ Extends the **PartDesign** workbench with seven helpers:
 - **Assembly Cut** — cut several PartDesign bodies at once with a single
   sketch. For each body a linked *binder* (or an independent sketch copy) is
   created and a pocket applied automatically, one body after another.
-- **Mirror (Symmetry)** — automatic symmetry helper. The **Mirror (Symmetry)**
-  command opens a small **floating panel** that stays on top of the window
+- **Automatic symmetry (Mirror)** — automatic symmetry helper. The command
+  opens a small **floating panel** that stays on top of the window
   while you model. Tick **Enable symmetry** and pick the reference:
-  **planes** XY / XZ / YZ, **axes** X / Y / Z (a 180° rotation, i.e. 2
-  occurrences) or a **point** inversion. The references are measured from the
-  **centre of the body**; a plane has one movement along its normal, an axis
-  two independent perpendicular movements and a point three (X, Y, Z) —
-  *Distance from the body centre* offsets them. While enabled, **every new pad /
+  **planes** XY / XZ / YZ or **axes** X / Y / Z (a 180° rotation, i.e. 2
+  occurrences). The references are measured from the **centre of the body**;
+  a plane moves along its normal, an axis along the two independent
+  perpendicular directions — *Distance from the body centre* offsets them.
+  While enabled, **every new pad /
   pocket is mirrored automatically**, computed by a parametric
   `Part::FeaturePython` object that re-reflects the body after each recompute,
   so the mirror always stays up to date. Untick **Enable symmetry** to stop;
@@ -43,8 +44,8 @@ Extends the **PartDesign** workbench with seven helpers:
   overlapping parts in red, re-running automatically after every change.
   Provided by the companion **CollisionDetector** addon.
 
-Together, the seven buttons form a single movable **AddOn Tools** toolbar that
-can be dragged anywhere on the top bars:
+Together with the **CollisionDetector** addon, the buttons form a single
+movable **AddOn Tools** toolbar that can be dragged anywhere on the top bars:
 
 ## Installation
 
@@ -91,22 +92,21 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
    document tree next to the rib feature — it is a static snapshot, not
    parametric.
 
-### Mirror (Symmetry)
+### Automatic symmetry (Mirror)
 1. Create a solid in a PartDesign body (e.g. a pad).
-2. Click **Mirror (Symmetry)** in the Part Design Helper Features toolbar: a
-   small **floating panel** opens, stays on top and can be moved anywhere.
-3. Tick **Enable symmetry** to switch the automatic mirror on. Choose the
-   references: **Plane XY / XZ / YZ** (mirror), **Axis X / Y / Z** (180°
-   rotation, 2 occurrences) or **Point** (inversion). A plane has one
+2. Click **Automatic symmetry** in the Part Design Helper Features toolbar.
+   The first time, a dialog opens to pick the reference; once a symmetry
+   exists, the button opens a small **floating panel** that stays on top and
+   can be moved anywhere.
+3. Choose the reference: **Plane XY / XZ / YZ** (mirror) or **Axis X / Y / Z**
+   (a 180° rotation, i.e. 2 occurrences). A plane has one
    *Distance from the body centre (mm)* movement, an axis two (perpendicular
-   to it) and a point three (X, Y, Z).
-4. With the symmetry enabled, **every change to the body is mirrored
-   automatically** — the parametric mirror (`Symmetry` in the tree) reflects
-   the current body shape on every recompute, so a pad/pocket you add or edit
-   appears mirrored right away. Untick **Enable symmetry** to stop. The panel
-   stays active while you model; close it and reopen it with the toolbar
-   button whenever you need it. The **Automatic symmetry** toolbar button is a
-   quick on/off toggle for the same feature.
+   to it).
+4. Tick **Auto mirror** in the panel and **every change to the body is
+   mirrored automatically** — a parametric `Symmetry` object reflects the
+   body on every recompute, so a pad/pocket you add or edit appears mirrored
+   right away. You can also press **Mirror last operation** to mirror only
+   the latest feature. Untick **Auto mirror** (or close the panel) to stop.
 
 ### Collision detector
 1. With a document open, click **Collision Detector** in the **AddOn Tools**
@@ -124,7 +124,7 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 
 ### AddOn Tools toolbar
 
-![The seven toolbar buttons (Create Pipe, Subtractive Pipe, Rib Between Faces, Assembly Cut, Mirror (Symmetry), Collision detector, Weight / Volume)](images/addon-tools-toolbar.png)
+![The toolbar buttons: Create Pipe, Subtractive Pipe, Rib Between Faces, Assembly Cut, Automatic symmetry, Weight / Volume and the Collision detector button from the companion addon](images/addon-tools-toolbar.png)
 
 ### Create Pipe (additive)
 
@@ -142,9 +142,9 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 
 ![Create Rib Between Faces (plane + cylinder)](images/rib-cylinder.png)
 
-### Mirror (Symmetry)
+### Automatic symmetry (Mirror)
 
-![Mirror (Symmetry)](images/symmetry.png)
+![Automatic symmetry (Mirror)](images/symmetry.png)
 
 ### Weight / Volume
 
