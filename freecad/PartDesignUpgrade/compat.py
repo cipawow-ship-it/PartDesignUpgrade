@@ -25,8 +25,6 @@ import os
 import FreeCAD
 import FreeCADGui as Gui
 
-from .translations import tr as _tr
-
 _OLD_TOOLBAR_NAME = "AssemblyCutToolBar"
 _OLD_COMMAND = "AssemblyCut_Cut"
 _SWEEP_DELAY_MS = 5000
@@ -34,29 +32,36 @@ _SWEEP_DELAY_MS = 5000
 _notified = False
 
 
-def _icon(name):
-    return os.path.join(
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")),
-        "Resources", "Icons", name)
+def _detect_legacy():
+    """True when the standalone AssemblyCut addon is actually loaded.
 
-
-def _delegate_old_command():
-    """Re-point the legacy AssemblyCut_Cut command at the new engine.
-
-    Only done when the legacy command is actually registered (i.e. the old
-    addon is really loaded), so a PartDesignUpgrade-only install is never
-    touched. Overwriting an already registered command is safe here: FreeCAD
-    keeps the last registration, and this sweep runs after the legacy addon.
+    On FreeCAD 1.x `Gui.Command` is a plain type whose registry is queried via
+    `listAll()`. Guarded so this works even in headless mode, where the
+    `Command` attribute does not exist at all.
     """
-    global _notified
     gcmd = getattr(Gui, "Command", None)
     if gcmd is None:
         return False
     try:
-        has_old = gcmd.has(_OLD_COMMAND)
+        return _OLD_COMMAND in list(getattr(gcmd, "listAll", lambda: [])() or [])
     except Exception:
-        has_old = False
-    if not has_old:
+        return False
+
+
+def _hook_legacy_engine():
+    """Make the legacy AssemblyCut_Cut command run the PartDesignUpgrade engine.
+
+    re-registering the command is not possible on FreeCAD 1.x: `Gui.addCommand`
+    silently keeps the existing registration and there is no API to remove a
+    non-custom command. The legacy command's `Activated` dispatches through
+    ``from <core> import assembly_cut`` at call time, so replacing that symbol
+    on the already-loaded core module redirects every invocation (macros,
+    custom toolbars, keyboard shortcuts) to the new engine. Both the modern
+    package layout (`freecad.AssemblyCut.AssemblyCutCore`) and the old zip
+    layout (top-level `AssemblyCutCore`) are supported.
+    """
+    global _notified
+    if not _detect_legacy():
         return False
     try:
         from . import assemblycut
@@ -65,36 +70,24 @@ def _delegate_old_command():
     entry = getattr(assemblycut, "assembly_cut", None)
     if entry is None:
         return False
-
-    class _LegacyCompatCommand:
-        def GetResources(self):
-            return {
-                "MenuText": _tr("Assembly Cut"),
-                "ToolTip": _tr(
-                    "Cut several PartDesign bodies at once using one sketch "
-                    "(now provided by PartDesignUpgrade)."),
-                "StatusTip": _tr("Cut multiple bodies with a single sketch"),
-                "Pixmap": _icon("AssemblyCut.svg"),
-            }
-
-        def IsActive(self):
-            try:
-                return FreeCAD.ActiveDocument is not None
-            except Exception:
-                return False
-
-        def Activated(self, arg=0):
-            entry()
-
     try:
-        gcmd.addCommand(_OLD_COMMAND, _LegacyCompatCommand())
+        import freecad.AssemblyCut.AssemblyCutCore as _core
     except Exception:
+        try:
+            import AssemblyCutCore as _core
+        except Exception:
+            _core = None
+    if _core is None:
         return False
+    if getattr(_core, "assembly_cut", None) is entry:
+        return True
+    _core.assembly_cut = entry
     if not _notified:
         _notified = True
         FreeCAD.Console.PrintMessage(
             "AssemblyCut is now part of PartDesignUpgrade: you can uninstall "
-            "the standalone 'AssemblyCut' addon.\n")
+            "the standalone 'AssemblyCut' addon (the legacy AssemblyCut_Cut "
+            "command now runs the PartDesignUpgrade engine).\n")
     return True
 
 
@@ -116,7 +109,7 @@ def _sweep():
     except Exception:
         pass
     try:
-        _delegate_old_command()
+        _hook_legacy_engine()
     except Exception:
         pass
 
