@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 """Task panel for the "Mirror (Symmetry)" command.
 
-The reference (plane / axis / point) starts at the centre of the body. Three
-buttons snap it to the fundamental planes (or axes) and an offset spin box
-moves it away from the centre. A live datum shows the reference in the 3D
-view. The panel appears in the FreeCAD task view (side bar), not in a modal
-dialog.
+The reference (plane / axis) starts at the centre of the body. Three buttons
+snap it to the fundamental planes (or axes) and an offset spin box moves it
+away from the centre. A live datum shows the reference in the 3D view. The
+panel appears in the FreeCAD task view (side bar), not in a modal dialog.
 """
 
 from PySide6.QtWidgets import (QDoubleSpinBox, QGroupBox, QHBoxLayout,
@@ -20,14 +19,13 @@ _PLANES = ("XY", "XZ", "YZ")
 _AXES = ("X", "Y", "Z")
 _PLANE_LABELS = ("Plane XY", "Plane XZ", "Plane YZ")
 _AXIS_LABELS = ("Axis X", "Axis Y", "Axis Z")
-_DEFAULT_TARGET = {"plane": "XY", "axis": "X", "point": ""}
+_DEFAULT_TARGET = {"plane": "XY", "axis": "X"}
 # axis movements: the two directions perpendicular to the axis
 _AXIS_MOVES = {
     "X": ("Y", "Z"),
     "Y": ("X", "Z"),
     "Z": ("X", "Y"),
 }
-_POINT_MOVES = ("X", "Y", "Z")
 
 
 class _MirrorPanel(QWidget):
@@ -49,11 +47,9 @@ class _MirrorPanel(QWidget):
         tl = QHBoxLayout(type_box)
         self.rb_plane = QRadioButton(_tr("Plane"))
         self.rb_axis = QRadioButton(_tr("Axis"))
-        self.rb_point = QRadioButton(_tr("Point"))
         self.rb_plane.setChecked(True)
         tl.addWidget(self.rb_plane)
         tl.addWidget(self.rb_axis)
-        tl.addWidget(self.rb_point)
         root.addWidget(type_box)
 
         snap_box = QGroupBox(_tr("Snap to a fundamental direction"))
@@ -78,7 +74,6 @@ class _MirrorPanel(QWidget):
 
         self.rb_plane.toggled.connect(lambda _v: self._sync())
         self.rb_axis.toggled.connect(lambda _v: self._sync())
-        self.rb_point.toggled.connect(lambda _v: self._sync())
 
         self._sync()
 
@@ -124,20 +119,10 @@ class _MirrorPanel(QWidget):
                 self._spins.append(s)
                 row.addWidget(s, 1)
                 self.off_lay.addLayout(row)
-        else:  # point
-            for lab in _POINT_MOVES:
-                row = QHBoxLayout()
-                row.addWidget(QLabel(lab))
-                s = self._make_spin()
-                self._spins.append(s)
-                row.addWidget(s, 1)
-                self.off_lay.addLayout(row)
 
     def _kind_now(self):
         if self.rb_axis.isChecked():
             return "axis"
-        if self.rb_point.isChecked():
-            return "point"
         return "plane"
 
     def _sync(self):
@@ -146,13 +131,12 @@ class _MirrorPanel(QWidget):
             self._kind = kind
             self._target = _DEFAULT_TARGET[kind]
             self._rebuild_offset()
-        seq = _PLANES if kind == "plane" else (_AXES if kind == "axis" else ())
-        labels = (_PLANE_LABELS if kind == "plane"
-                  else _AXIS_LABELS if kind == "axis" else ("-", "-", "-"))
+        seq = _PLANES if kind == "plane" else _AXES
+        labels = _PLANE_LABELS if kind == "plane" else _AXIS_LABELS
         for i, b in enumerate(self._snap_buttons):
-            b.setEnabled(bool(seq))
-            b.setText(_tr(labels[i]) if seq else "-")
-            b.setChecked(bool(seq) and seq[i] == self._target)
+            b.setEnabled(True)
+            b.setText(_tr(labels[i]))
+            b.setChecked(seq[i] == self._target)
         self.info.setText(_tr(
             "The mirrored features are parametric: edit the body and the "
             "mirror updates."))
@@ -174,7 +158,7 @@ class _MirrorPanel(QWidget):
             return self._spins[0].value()
         if kind == "axis":
             return tuple(s.value() for s in self._spins)
-        return tuple(s.value() for s in self._spins)
+        return self._spins[0].value()
 
     def _refresh(self):
         from . import auto_symmetry

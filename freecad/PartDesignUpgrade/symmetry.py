@@ -3,13 +3,12 @@
 """Symmetry (Mirror) helper for PartDesignUpgrade.
 
 Run the "Mirror (Symmetry)" command on a PartDesign body: a dialog lets the
-user pick a reference (plane, axis or point) that starts at the centre of the
+user pick a reference (plane or axis) that starts at the centre of the
 body and can be moved with the three fundamental-plane buttons plus an offset.
 Pressing OK mirrors the solid:
 
 - plane  -> parametric PartDesign::Mirrored,
-- axis   -> parametric PartDesign::PolarPattern (180 deg, 2 occurrences),
-- point  -> a static Part::Feature copy reflected through the point.
+- axis   -> parametric PartDesign::PolarPattern (180 deg, 2 occurrences).
 """
 
 import FreeCAD
@@ -25,7 +24,7 @@ _TRANSFORM_NAME = "SymmetryTransform"
 _HELPER_DATUM_PREFIXES = ("Pipe", "FaceRib", "Rib", "AssemblyCut")
 
 # last choice recorded by the task panel, reused when re-enabling from the
-# floating window: {"kind": "plane"/"axis"/"point", "target": ..., "offset": ...}
+# floating window: {"kind": "plane"/"axis", "target": ..., "offset": ...}
 _last_choice = None
 
 # name of the reference datum the panel is currently working on. New mirror
@@ -50,7 +49,6 @@ _AXIS_MOVES = {
     "Y": (("X", (1, 0, 0)), ("Z", (0, 0, 1))),
     "Z": (("X", (1, 0, 0)), ("Y", (0, 1, 0))),
 }
-_POINT_MOVES = (("X", (1, 0, 0)), ("Y", (0, 1, 0)), ("Z", (0, 0, 1)))
 _AXIS_LATERAL = {
     "X": FreeCAD.Vector(0, 1, 0),
     "Y": FreeCAD.Vector(1, 0, 0),
@@ -320,14 +318,13 @@ def _datum_extents(bbox, rot, length_only=False):
 def create_reference(body, ref_type, target, center, offset=0.0):
     """Create the symmetry reference datum inside the body.
 
-    ref_type: 'plane', 'axis' or 'point'.
-    target:   'XY'/'XZ'/'YZ' for planes, 'X'/'Y'/'Z' for axes, '' for points.
+    ref_type: 'plane' or 'axis'. Point references were removed.
+    target:   'XY'/'XZ'/'YZ' for planes, 'X'/'Y'/'Z' for axes.
     center:   FreeCAD.Vector, centre of the body bounding box.
     offset:   mm, moves the reference away from the centre. For a plane it is
               a single value along the plane normal. For an axis it is a
               scalar (legacy, first lateral direction) or a 2-tuple for the
-              two independent perpendicular movements. For a point it is a
-              3-tuple (dx, dy, dz).
+              two independent perpendicular movements.
     """
     global _force_new_reference
     _force_new_reference = False
@@ -375,18 +372,9 @@ def create_reference(body, ref_type, target, center, offset=0.0):
             d.ResizeMode = "Manual"
             d.Length = _datum_extents(bbox, rot, length_only=True)
         else:
-            d = body.newObject("PartDesign::Point", _REF_NAME)
-            d.MapMode = "Deactivated"
-            try:
-                dx, dy, dz = (float(offset[0]), float(offset[1]),
-                              float(offset[2]))
-            except Exception:
-                try:
-                    dx, dy, dz = (float(offset[0]), float(offset[1]), 0.0)
-                except Exception:
-                    dx, dy, dz = 0.0, 0.0, float(offset)
-            d.Placement = FreeCAD.Placement(
-                center + FreeCAD.Vector(dx, dy, dz), FreeCAD.Rotation())
+            _msg(_tr("Point symmetry was removed: use a plane or axis "
+                     "reference."), error=True)
+            return None
         _mark_active_reference(d)
         return d
     except Exception as exc:
@@ -447,7 +435,9 @@ def mirror_solid(body, doc, ref):
         if ref.TypeId in ("Part::DatumLine", "PartDesign::Line"):
             return _pattern_about_axis(body, doc, ref, features)
         if ref.TypeId in ("Part::DatumPoint", "PartDesign::Point"):
-            return _point_symmetry(body, doc, ref)
+            _msg(_tr("Point symmetry was removed: use a plane or axis "
+                     "reference."), error=True)
+            return False
         _msg(_tr("Unsupported symmetry reference: {}").format(ref.TypeId),
              error=True)
         return False
@@ -628,25 +618,6 @@ def _pattern_about_axis(body, doc, ref, features, originals=None):
     return True
 
 
-def _point_symmetry(body, doc, ref):
-    shape = body.Shape
-    if shape is None or shape.isNull():
-        _msg(_tr("The body has no solid to mirror."), error=True)
-        return False
-    c = ref.Placement.Base
-    s = shape.mirror(FreeCAD.Vector(c.x, 0, 0), FreeCAD.Vector(1, 0, 0))
-    s = s.mirror(FreeCAD.Vector(0, c.y, 0), FreeCAD.Vector(0, 1, 0))
-    s = s.mirror(FreeCAD.Vector(0, 0, c.z), FreeCAD.Vector(0, 0, 1))
-    f = doc.addObject("Part::Feature", _TRANSFORM_NAME)
-    f.Label = "Symmetry (point)"
-    f.Shape = s
-    doc.recompute()
-    _msg(_tr(
-        "Point symmetry creates a static copy that does not update when "
-        "you edit the solid."))
-    return True
-
-
 # ---------------------------------------------------------------- manual sync
 
 
@@ -655,7 +626,7 @@ def find_reference(doc, body=None):
 
     The datum the panel is currently working on (if any) wins, so new mirror
     operations always use the reference the user just created. The scan falls
-    back to the first addon datum (plane / line / point) in the document, or
+    back to the first addon datum (plane / line) in the document, or
     None when the user has not created one yet (single feature mirror, no
     reference chosen).
 
@@ -886,8 +857,8 @@ def mirror_feature(doc, body, ref, feat):
             t.Angle = 180
             t.Occurrences = 2
         else:
-            _msg(_tr("Point symmetry is not supported for a single "
-                     "operation."), error=True)
+            _msg(_tr("Unsupported reference for a single operation."),
+                 error=True)
             return False
     except Exception as exc:
         _msg(_tr("Could not mirror the last operation: {}").format(exc),

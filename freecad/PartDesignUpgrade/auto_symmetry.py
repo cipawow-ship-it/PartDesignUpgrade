@@ -4,16 +4,15 @@
 
 A small checkable toolbar button ("Automatic symmetry") toggles the automatic
 mirror on or off. The mirror uses the reference chosen in the "Mirror
-(Symmetry)" task panel (plane XY / XZ / YZ, axis X / Y / Z, point) together
+(Symmetry)" task panel (plane XY / XZ / YZ, axis X / Y / Z) together
 with its offsets. When enabled, the mirrored solid is computed by a parametric
 Part::FeaturePython object: it re-reflects the current body shape after every
 change to the body, so every new pad/pocket is mirrored automatically.
 
 Offsets are measured from the body centre. A plane has a single movement along
-its normal, an axis has two independent perpendicular movements and a point has
-three (X, Y, Z). Planes are mirrored with Shape.mirror; a 180 degree axial
-rotation is expressed as two reflections across perpendicular planes through
-the axis; the point inversion is three mirror reflections.
+its normal, an axis has two independent perpendicular movements. Planes are
+mirrored with Shape.mirror; a 180 degree axial rotation is expressed as two
+reflections across perpendicular planes through the axis.
 """
 
 import FreeCAD
@@ -31,9 +30,9 @@ _auto_on = False
 def set_choice(kind, target, offset):
     """Remember the reference chosen in the mirror task panel. When the
     automatic feature already exists and is enabled, it follows the choice.
-    offset is a float (plane), a 2-tuple (axis) or a 3-tuple (point)."""
+    offset is a float (plane) or a 2-tuple (axis)."""
     global _last_choice
-    if kind not in ("plane", "axis", "point"):
+    if kind not in ("plane", "axis"):
         kind = "plane"
     _last_choice = {"kind": kind, "target": target, "offset": offset}
     feat = _existing_feature()
@@ -61,8 +60,6 @@ def _planes_axes_point(kind, target):
         planes = (target == "XY", target == "XZ", target == "YZ")
     elif kind == "axis":
         axes = (target == "X", target == "Y", target == "Z")
-    else:
-        point = True
     return planes, axes, point
 
 
@@ -125,10 +122,9 @@ def set_active(doc, body, on):
 
 
 def _update_reference(body, planes, axes, point, offset):
-    """Show a datum plane/line/point inside the body matching the active
-    selection (first selected plane, else first selected axis, else point).
-    Removes the datum when nothing is selected. offset may be a float, a
-    2-tuple (axis) or a 3-tuple (point)."""
+    """Show a datum plane/line inside the body matching the active selection
+    (first selected plane, else first selected axis). Removes the datum when
+    nothing is selected. offset may be a float or a 2-tuple (axis)."""
     if body is None:
         return
     doc = body.Document
@@ -141,7 +137,7 @@ def _update_reference(body, planes, axes, point, offset):
             ref = None
     except Exception:
         pass
-    if not any(list(planes) + list(axes) + [point]):
+    if not any(list(planes) + list(axes)):
         if ref is not None:
             try:
                 doc.removeObject(_REF_NAME)
@@ -208,16 +204,16 @@ def _update_reference(body, planes, axes, point, offset):
         box = shape.BoundBox
         size_kind = "line"
     else:
-        new_type = "PartDesign::Point"
-        if _is_seq(offset) and len(offset) >= 3:
-            dx, dy, dz = (float(offset[0]), float(offset[1]),
-                          float(offset[2]))
-        else:
-            dx, dy, dz = 0.0, 0.0, float(offset)
-        base = c + FreeCAD.Vector(dx, dy, dz)
-        rot = FreeCAD.Rotation()
-        box = None
-        size_kind = None
+        # point symmetry is no longer supported: remove any leftover datum
+        if ref is not None:
+            try:
+                doc.removeObject(_REF_NAME)
+            except Exception:
+                try:
+                    body.removeObject(ref)
+                except Exception:
+                    pass
+        return
 
     if ref is not None and ref.TypeId != new_type:
         try:
@@ -355,13 +351,6 @@ class _SymmetryFeature:
                              FreeCAD.Vector(1, 0, 0))
             copies.append(s.mirror(FreeCAD.Vector(0, c.y + oy, 0),
                                    FreeCAD.Vector(0, 1, 0)))
-        if getattr(obj, "RefPoint", False):
-            s = shape.mirror(FreeCAD.Vector(c.x + ox, 0, 0),
-                             FreeCAD.Vector(1, 0, 0))
-            s = s.mirror(FreeCAD.Vector(0, c.y + oy, 0),
-                         FreeCAD.Vector(0, 1, 0))
-            copies.append(s.mirror(FreeCAD.Vector(0, 0, c.z + oz),
-                                   FreeCAD.Vector(0, 0, 1)))
         if not copies:
             return shape
         fused = shape
@@ -398,7 +387,7 @@ def ensure_feature(doc, body):
 
 
 def _set_offsets(feat, planes, axes, point, offset):
-    """Store the offsets. offset is a float, 2-tuple or 3-tuple; the value is
+    """Store the offsets. offset is a float or 2-tuple; the value is
     mapped to the directions relevant for the first selected reference."""
     if _is_seq(offset) and len(offset) >= 3:
         ox, oy, oz = (float(offset[0]), float(offset[1]), float(offset[2]))
@@ -417,17 +406,13 @@ def _set_offsets(feat, planes, axes, point, offset):
     else:
         ox, oy, oz = 0.0, 0.0, 0.0
         off = float(offset) if not _is_seq(offset) else 0.0
-        if any(planes) or point:
-            ox, oy, oz = 0.0, 0.0, 0.0
-            if any(planes):
-                if planes[0]:  # XY
-                    oz = off
-                elif planes[1]:  # XZ
-                    oy = off
-                elif planes[2]:  # YZ
-                    ox = off
-            else:  # point
+        if any(planes):
+            if planes[0]:  # XY
                 oz = off
+            elif planes[1]:  # XZ
+                oy = off
+            elif planes[2]:  # YZ
+                ox = off
         elif any(axes):
             if axes[0]:
                 oy = off
@@ -440,7 +425,8 @@ def _set_offsets(feat, planes, axes, point, offset):
 
 def set_refs(feat, planes, axes, point, offset, enabled=True):
     """Configure the references; planes/axes are iterables of booleans. offset
-    may be a float, a 2-tuple (axis) or a 3-tuple (point)."""
+    may be a float or a 2-tuple (axis). Point references were removed: the
+    RefPoint flag is kept for compatibility and always stored False."""
     if feat is None:
         return
     setattr(feat, "RefXY", bool(planes[0]))
@@ -449,7 +435,7 @@ def set_refs(feat, planes, axes, point, offset, enabled=True):
     setattr(feat, "AxisX", bool(axes[0]))
     setattr(feat, "AxisY", bool(axes[1]))
     setattr(feat, "AxisZ", bool(axes[2]))
-    setattr(feat, "RefPoint", bool(point))
+    setattr(feat, "RefPoint", False)
     _set_offsets(feat, planes, axes, point, offset)
     feat.Enabled = bool(enabled)
     try:

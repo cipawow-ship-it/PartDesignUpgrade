@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 """Symmetry panel shown in a floating dock.
 
-The reference (plane / axis / point and its offset) is chosen in the "Mirror
+The reference (plane / axis and its offset) is chosen in the "Mirror
 (Symmetry)" task dialog. Once the dialog is accepted, the dock with the panel
 opens (floating, movable window):
 - "Mirror last operation" mirrors the latest feature of the body,
@@ -203,7 +203,7 @@ class SymmetryPanel(QWidget):
         elif kind == "axis":
             ref_txt = _tr("Axis {}".format(target))
         else:
-            ref_txt = _tr("Point")
+            ref_txt = _tr("Plane {}".format(target))
         self.ref_lbl.setText("{}".format(ref_txt))
         if self.chk_auto.isChecked():
             self.info.setText(_tr(

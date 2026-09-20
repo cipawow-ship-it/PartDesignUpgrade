@@ -131,7 +131,7 @@ class _AutoSymmetryCommand(_BaseCommand):
     def __init__(self):
         super().__init__({
             "MenuText": _tr("Automatic symmetry"),
-            "ToolTip": _tr("Mirror the solid automatically around the chosen planes/axes/point: every new feature updates the mirror"),
+            "ToolTip": _tr("Mirror the solid automatically around the chosen planes/axes: every new feature updates the mirror"),
             "Pixmap": _icon("Mirror_icon.svg"),
             "StatusTip": _tr("Automatically mirror the body"),
             "Checkable": True,
