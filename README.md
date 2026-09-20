@@ -39,9 +39,12 @@ Extends the **PartDesign** workbench with seven helpers:
 - **Weight / Volume** — shows the volume (mm³ / cm³) and the mass of a body
   using a density picker (metals, plastics, wood, glass, concrete, ... or a
   custom value in kg/m³).
+- **Collision Detector** — makes every body transparent and highlights the
+  overlapping parts in red, re-running automatically after every change.
+  Provided by the companion **CollisionDetector** addon.
 
-Together with the collision detector from the companion **CollisionDetector**
-addon, the buttons form a single seven-button movable **AddOn Tools** toolbar:
+Together, the seven buttons form a single movable **AddOn Tools** toolbar that
+can be dragged anywhere on the top bars:
 
 ## Installation
 
@@ -104,6 +107,14 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
    stays active while you model; close it and reopen it with the toolbar
    button whenever you need it. The **Automatic symmetry** toolbar button is a
    quick on/off toggle for the same feature.
+
+### Collision detector
+1. With a document open, click **Collision Detector** in the **AddOn Tools**
+   toolbar.
+2. All bodies become transparent and the overlapping parts are highlighted in
+   red.
+3. The check runs again automatically after every change to the document; click
+   the button again to turn it off.
 
 ### Weight / Volume
 1. Select a body (or any shape with volume).
