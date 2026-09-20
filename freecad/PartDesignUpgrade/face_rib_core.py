@@ -34,10 +34,29 @@ try:
 except ImportError:
     from translations import tr as _tr
 
-from .rib_core import _refine
+from .rib_core import _refine, _parent_body
 
 _OVERLAP = 0.5
 _EPS = 1e-7
+
+
+def _copy_appearance(src_vobj, dst_vobj):
+    """Copy the color look (material/diffuse/transparency) to a new feature.
+
+    FreeCAD's PartDesign body propagates visual properties only to features
+    that already exist when the body's appearance changes, not to features
+    added later. A freshly created rib would otherwise become the Tip with the
+    default gray material and 'un-color' the body.
+    """
+    if src_vobj is None or dst_vobj is None:
+        return
+    for prop in ("ShapeAppearance", "DiffuseColor", "Transparency"):
+        if not hasattr(src_vobj, prop) or not hasattr(dst_vobj, prop):
+            continue
+        try:
+            setattr(dst_vobj, prop, getattr(src_vobj, prop))
+        except Exception:
+            pass
 
 
 def _is_triangle_shape(shp):
@@ -676,6 +695,43 @@ def _ref_for(obj, sub, target_body):
     return obj, sub
 
 
+def _face_in_body(face, obj, body):
+    """Express *face* (picked on *obj*) in *body*'s local frame.
+
+    A sub-shape picked on a PartDesign Body is already in global coordinates,
+    while one picked on a feature/Part object is local to that object. The
+    native rib plane is a child of *body*, so the face must be body-local or
+    the rib lands wrong as soon as the body is moved or rotated.
+    """
+    if face is None:
+        return None
+    gsh = face
+    if getattr(obj, "TypeId", "") != "PartDesign::Body":
+        # A sub-shape of a PartDesign feature is already body-local (its own
+        # placement is baked into the shape), so only the owning body's global
+        # placement must be applied. A standalone Part object's sub-shape is
+        # object-local, so its own global placement applies.
+        try:
+            owner = _parent_body(obj, obj.Document)
+        except Exception:
+            owner = None
+        try:
+            place = owner.getGlobalPlacement() if owner is not None \
+                else obj.getGlobalPlacement()
+            gsh = face.copy()
+            gsh.transformShape(place.toMatrix())
+        except Exception:
+            gsh = face
+    if body is None:
+        return gsh
+    try:
+        lsh = gsh.copy()
+        lsh.transformShape(body.getGlobalPlacement().inverse().toMatrix())
+        return lsh
+    except Exception:
+        return gsh
+
+
 def _default_lengths(face_a, face_b, kind):
     """Pleasant defaults for L1/L2 based on the actual faces."""
     d1 = 20.0
@@ -875,8 +931,43 @@ def _sketch_frame(kind, f1, f2, l1, l2, offset, copies, flip_a=False,
     return None
 
 
-def _make_rib_sketch(doc, body, name, origin, uvec, vvec, normal, polygon):
-    """Create a helper Sketcher sketch showing the rib profile."""
+def _constrain_rib_sketch(sketch, pts):
+    """Fully constrain the closed profile wire of a rib sketch.
+
+    *pts* are the local-plane coordinates of the profile vertices (one point
+    per wire vertex; the wire is closed).  Every vertex is pinned to its exact
+    coordinate with DistanceX/DistanceY (relative to the sketch origin) and
+    the wire is joined with Coincident constraints, leaving no remaining
+    degree of freedom so the sketch is ready for a native Pad.
+    """
+    from Sketcher import Constraint  # noqa: PLC0415
+    n = len(pts)
+    if n < 3:
+        return
+    for i in range(n):
+        b = pts[(i + 1) % n]
+        try:
+            sketch.addConstraint(
+                Constraint("Coincident", i, 2, (i + 1) % n, 1))
+            sketch.addConstraint(Constraint("DistanceX", i, 2, b.x))
+            sketch.addConstraint(Constraint("DistanceY", i, 2, b.y))
+        except Exception:
+            return
+    try:
+        sketch.autoRemoveRedundants()
+    except Exception:
+        pass
+
+
+def _make_rib_sketch(doc, body, name, origin, uvec, vvec, normal, polygon,
+                     constrained=True, attach=None):
+    """Create a Sketcher sketch with the rib profile in its local plane.
+
+    The profile is a closed wire.  When *attach* (a PartDesign plane/datum)
+    is given the sketch is mapped onto it and inherits its placement,
+    otherwise the placement is taken from the frame directly.  When
+    *constrained* is true the wire is fully constrained (ready for a Pad).
+    """
     try:
         sketch = doc.addObject("Sketcher::SketchObject", name)
     except Exception:
@@ -886,20 +977,30 @@ def _make_rib_sketch(doc, body, name, origin, uvec, vvec, normal, polygon):
             body.addObject(sketch)
         except Exception:
             pass
-    m = FreeCAD.Matrix()
-    m.A11 = uvec.x
-    m.A12 = vvec.x
-    m.A13 = normal.x
-    m.A14 = origin.x
-    m.A21 = uvec.y
-    m.A22 = vvec.y
-    m.A23 = normal.y
-    m.A24 = origin.y
-    m.A31 = uvec.z
-    m.A32 = vvec.z
-    m.A33 = normal.z
-    m.A34 = origin.z
-    sketch.Placement = FreeCAD.Placement(m)
+    if attach is None:
+        m = FreeCAD.Matrix()
+        m.A11 = uvec.x
+        m.A12 = vvec.x
+        m.A13 = normal.x
+        m.A14 = origin.x
+        m.A21 = uvec.y
+        m.A22 = vvec.y
+        m.A23 = normal.y
+        m.A24 = origin.y
+        m.A31 = uvec.z
+        m.A32 = vvec.z
+        m.A33 = normal.z
+        m.A34 = origin.z
+        try:
+            sketch.Placement = FreeCAD.Placement(m)
+        except Exception:
+            return None
+    else:
+        try:
+            sketch.AttachmentSupport = [(attach, "")]
+            sketch.MapMode = "FlatFace"
+        except Exception:
+            return None
     pts = [
         FreeCAD.Vector((p - origin).dot(uvec), (p - origin).dot(vvec), 0.0)
         for p in polygon
@@ -911,7 +1012,273 @@ def _make_rib_sketch(doc, body, name, origin, uvec, vvec, normal, polygon):
             sketch.addGeometry(Part.LineSegment(a, b), False)
         except Exception:
             break
+    if constrained:
+        _constrain_rib_sketch(sketch, pts)
+    try:
+        sketch.Document.recompute()
+    except Exception:
+        pass
     return sketch
+
+
+# =============================================================================
+# Native PartDesign rib (constrained sketch + Pad + native pattern)
+# =============================================================================
+
+def _linear_pattern(doc, body, pad, direction_ref, spacing, copies):
+    """Native LinearPattern replicating *pad* along the corner edge."""
+    copies = max(1, int(round(float(copies))))
+    pat = doc.addObject("PartDesign::LinearPattern", "FaceRibPattern")
+    body.addObject(pat)
+    try:
+        pat.Originals = [pad]
+        pat.Direction = direction_ref
+        pat.Occurrences = copies
+        # FreeCAD 1.x has no Spacing property: uniform spacing is obtained
+        # with Mode="Extent" and Length = spacing * (N - 1) over N copies.
+        for k, v in (("Mode", "Extent"),
+                     ("Length", float(spacing) * (copies - 1))):
+            try:
+                setattr(pat, k, v)
+            except Exception:
+                pass
+        try:
+            pat.Reversed = False
+        except Exception:
+            pass
+    except Exception:
+        try:
+            doc.removeObject(pat.Name)
+        except Exception:
+            pass
+        raise
+    return pat
+
+
+def _polar_pattern(doc, body, pad, axis_ref, copies):
+    """Native PolarPattern replicating *pad* around the cylinder axis."""
+    copies = max(1, int(round(float(copies))))
+    pat = doc.addObject("PartDesign::PolarPattern", "FaceRibPattern")
+    body.addObject(pat)
+    try:
+        pat.Originals = [pad]
+        pat.Axis = axis_ref
+        pat.Occurrences = copies
+        # Copies sit every 360/N degrees (see build_cylinder_rib), so with
+        # Mode="Extent" (last copy at Angle) the total angle is 360*(N-1)/N.
+        for k, v in (("Mode", "Extent"),
+                     ("Angle", 360.0 * (copies - 1) / copies)):
+            try:
+                setattr(pat, k, v)
+            except Exception:
+                pass
+        try:
+            pat.Reversed = False
+        except Exception:
+            pass
+    except Exception:
+        try:
+            doc.removeObject(pat.Name)
+        except Exception:
+            pass
+        raise
+    return pat
+
+
+def _hide(obj):
+    try:
+        obj.ViewObject.Visibility = False
+    except Exception:
+        pass
+
+
+def _create_native_rib(doc, body, kind, f1, f2, frame, thick, copies,
+                       spacing):
+    """Native PartDesign rib: constrained sketch + Pad + native pattern.
+
+    Mirrors the native-pipe approach: a datum plane carries a fully
+    constrained profile sketch, a Pad adds one rib plate, and when more than
+    one rib is requested a native LinearPattern (corner) or PolarPattern
+    (cylinder) replicates the plate along the corner edge / around the
+    cylinder axis.  All helper objects (datum plane, profile sketch, pattern
+    datum line) stay hidden.  Returns the feature that becomes the body tip.
+    """
+    origin, uvec, vvec, normal, polygon = frame
+    created = []
+
+    def _cleanup():
+        for n in reversed(created):
+            try:
+                o = doc.getObject(n)
+                if o is None:
+                    continue
+                doc.removeObject(n)
+            except Exception:
+                try:
+                    _hide(doc.getObject(n))
+                except Exception:
+                    pass
+
+    def _ok(shp):
+        return (shp is not None and not shp.isNull() and shp.isValid()
+                and shp.Solids)
+
+    try:
+        # 1) hidden datum plane carrying the profile sketch (as for the pipe)
+        plane = doc.addObject("PartDesign::Plane", "FaceRibPlane")
+        created.append(plane.Name)
+        body.addObject(plane)
+        m = FreeCAD.Matrix()
+        m.A11 = uvec.x
+        m.A12 = vvec.x
+        m.A13 = normal.x
+        m.A14 = origin.x
+        m.A21 = uvec.y
+        m.A22 = vvec.y
+        m.A23 = normal.y
+        m.A24 = origin.y
+        m.A31 = uvec.z
+        m.A32 = vvec.z
+        m.A33 = normal.z
+        m.A34 = origin.z
+        try:
+            plane.MapMode = "Deactivated"
+            plane.Placement = FreeCAD.Placement(m)
+        except Exception:
+            pass
+        doc.recompute()
+        _hide(plane)
+
+        # 2) fully constrained profile sketch on the plane
+        sk = _make_rib_sketch(doc, body, "FaceRibSketch", origin, uvec, vvec,
+                              normal, polygon, constrained=True, attach=plane)
+        if sk is None:
+            raise ValueError(_tr(
+                "The rib could not be built as a native PartDesign feature."))
+        created.append(sk.Name)
+        _hide(sk)
+
+        # 3) native pad (plate extruded along the plane normal, centred)
+        pad = doc.addObject("PartDesign::Pad", "FaceRib")
+        created.append(pad.Name)
+        body.addObject(pad)
+        pad.Profile = (sk, [])
+        pad.Length = float(thick)
+        pad.Midplane = True
+        pad.Reversed = False
+        doc.recompute()
+        if not _ok(getattr(pad, "Shape", None)):
+            raise ValueError(_tr(
+                "The rib could not be built as a native PartDesign feature."))
+
+        # 4) pattern direction / axis reference
+        if kind == "corner":
+            # the copies slide along the corner edge, which is perpendicular
+            # to the plate: no in-sketch line can represent it, so a hidden
+            # datum line inside the body supplies the direction
+            r = _plane_intersection_line(f1, f2)
+            if r is None:
+                raise ValueError(_tr("The two faces share the same centre."))
+            _r0, i_d = r
+            cand = (FreeCAD.Vector(0, 0, 1) if abs(i_d.z) < 0.9
+                    else FreeCAD.Vector(1, 0, 0))
+            # a PartDesign::Line datum runs along its local Z axis, so the
+            # direction (corner edge) goes on Z with a right-handed base
+            _y = cand - i_d * cand.dot(i_d)
+            if _y.Length <= _EPS:
+                raise ValueError(_tr("The two faces share the same centre."))
+            _y.normalize()
+            _x = _y.cross(i_d)
+            dm = FreeCAD.Matrix()
+            dm.A11 = _x.x
+            dm.A12 = _y.x
+            dm.A13 = i_d.x
+            dm.A14 = _r0.x
+            dm.A21 = _x.y
+            dm.A22 = _y.y
+            dm.A23 = i_d.y
+            dm.A24 = _r0.y
+            dm.A31 = _x.z
+            dm.A32 = _y.z
+            dm.A33 = i_d.z
+            dm.A34 = _r0.z
+            axis = doc.addObject("PartDesign::Line", "FaceRibAxis")
+            created.append(axis.Name)
+            body.addObject(axis)
+            try:
+                axis.MapMode = "Deactivated"
+                axis.Placement = FreeCAD.Placement(dm)
+            except Exception:
+                pass
+            _hide(axis)
+            pattern_ref = (axis, "Original")
+        else:
+            # the cylinder axis: a sketch construction line is NOT usable as
+            # a pattern axis reference (construction geometry is excluded from
+            # the sketch shape, so an "EdgeN" subname goes out of bounds).
+            # Supply the direction with a hidden datum line as for the corner.
+            if _is_plane_face(f1):
+                cyl = f2
+            else:
+                cyl = f1
+            info = _cylinder_info(cyl)
+            if info is None:
+                raise ValueError(_tr("The two faces share the same centre."))
+            ap, ad, _radius = info
+            cand = (FreeCAD.Vector(0, 0, 1) if abs(ad.z) < 0.9
+                    else FreeCAD.Vector(1, 0, 0))
+            _y = cand - ad * cand.dot(ad)
+            if _y.Length <= _EPS:
+                raise ValueError(_tr("The two faces share the same centre."))
+            _y.normalize()
+            _x = _y.cross(ad)
+            dm = FreeCAD.Matrix()
+            dm.A11 = _x.x
+            dm.A12 = _y.x
+            dm.A13 = ad.x
+            dm.A14 = ap.x
+            dm.A21 = _x.y
+            dm.A22 = _y.y
+            dm.A23 = ad.y
+            dm.A24 = ap.y
+            dm.A31 = _x.z
+            dm.A32 = _y.z
+            dm.A33 = ad.z
+            dm.A34 = ap.z
+            axis = doc.addObject("PartDesign::Line", "FaceRibAxis")
+            created.append(axis.Name)
+            body.addObject(axis)
+            try:
+                axis.MapMode = "Deactivated"
+                axis.Placement = FreeCAD.Placement(dm)
+            except Exception:
+                pass
+            _hide(axis)
+            pattern_ref = (axis, "Original")
+        doc.recompute()
+
+        # 5) replicate with a native pattern when several ribs are requested
+        if int(copies) <= 1:
+            tip = pad
+        elif kind == "corner":
+            tip = _linear_pattern(doc, body, pad, pattern_ref, spacing, copies)
+            created.append(tip.Name)
+        else:
+            tip = _polar_pattern(doc, body, pad, pattern_ref, copies)
+            created.append(tip.Name)
+        doc.recompute()
+        if not _ok(getattr(tip, "Shape", None)):
+            raise ValueError(_tr(
+                "The rib could not be built as a native PartDesign feature."))
+        try:
+            body.Tip = tip
+        except Exception:
+            pass
+        doc.recompute()
+        return tip
+    except Exception:
+        _cleanup()
+        raise
 
 
 # =============================================================================
@@ -978,6 +1345,25 @@ def create_face_rib():
     else:
         f2 = face2.Faces[0]
 
+    body = _active_body(doc)
+    if body is None:
+        try:
+            from .rib_core import _parent_body
+            body = _parent_body(obj1, doc)
+        except Exception:
+            body = None
+    if body is None:
+        bodies = [o for o in doc.Objects if o.TypeId == "PartDesign::Body"]
+        if len(bodies) == 1:
+            body = bodies[0]
+
+    # bring both faces into the target body's local frame: a face picked on a
+    # Body is global, one picked on a feature is body-local. The native rib
+    # plane is a body child, so mixing the two breaks moved/rotated bodies.
+    if body is not None:
+        f1 = _face_in_body(f1, obj1, body)
+        f2 = _face_in_body(f2, obj2, body)
+
     try:
         kind = classify_faces(f1, f2)
     except Exception:
@@ -991,18 +1377,6 @@ def create_face_rib():
     d1, d2 = _default_lengths(f1, f2, kind)
     fl1, fl2 = _full_lengths(f1, f2, kind)
 
-    body = _active_body(doc)
-    if body is None:
-        try:
-            from .rib_core import _parent_body
-            body = _parent_body(obj1, doc)
-        except Exception:
-            body = None
-    if body is None:
-        bodies = [o for o in doc.Objects if o.TypeId == "PartDesign::Body"]
-        if len(bodies) == 1:
-            body = bodies[0]
-
     from .FaceRibDialog import FaceRibPanel
 
     def _shape_of(l1, l2, thick, offset, copies, rev1, rev2, mode="tool",
@@ -1014,7 +1388,17 @@ def create_face_rib():
                 tip = getattr(body, "Tip", None)
                 if tip is not None and tip.Shape is not None and not tip.Shape.isNull():
                     raw = tip.Shape.fuse(raw)
-            return _refine(raw)
+            raw = _refine(raw)
+            # f1/f2 and the body tip are body-local: put the preview shape in
+            # global coordinates so it lines up with the moved/rotated body.
+            if body is not None:
+                try:
+                    sh = raw.copy()
+                    sh.transformShape(body.getGlobalPlacement().toMatrix())
+                    raw = sh
+                except Exception:
+                    pass
+            return raw
         except Exception:
             return None
 
@@ -1107,69 +1491,69 @@ def create_face_rib():
         except Exception as e:
             FreeCAD.Console.PrintError(_tr("Rib between faces: {}").format(e) + "\n")
             return
-        sketch = None
         frame = _sketch_frame(kind, f1, f2, l1, l2, offset, copies, rev1,
                               rev2, angle, shape, thick)
-        if frame is not None:
-            sketch = _make_rib_sketch(doc, body, "FaceRibSketch", *frame)
-            if sketch is not None:
-                try:
-                    sketch.ViewObject.Visibility = False
-                except Exception:
-                    pass
+        if frame is None:
+            FreeCAD.Console.PrintError(_tr("Rib between faces: {}").format(
+                _tr("The rib profile could not be computed with these "
+                    "settings.")) + "\n")
+            return
         try:
             if body is not None:
-                feat = doc.addObject(
-                    "PartDesign::FeatureAdditivePython", "FaceRib")
-                AdditiveFaceRibFeature(feat)
-            else:
-                feat = doc.addObject("Part::FeaturePython", "FaceRib")
-                FaceRibFeature(feat)
-            ref1 = _ref_for(obj1, sub1, body)
-            ref2 = _ref_for(obj2, sub2, body)
-            feat.F1Ref = ref1
-            feat.F2Ref = ref2
-            feat.Thickness = thick
-            feat.Length1 = l1
-            feat.Length2 = l2
-            feat.Offset = offset
-            feat.Copies = int(copies)
-            feat.Reversed1 = bool(rev1)
-            feat.Reversed2 = bool(rev2)
-            feat.Reversed = bool(rev1) and bool(rev2)
-            if kind == "cylinder":
-                feat.Angle = float(angle)
-            if kind in ("corner", "cylinder"):
-                feat.ProfileType = shape
-            if kind == "corner":
-                feat.Spacing = float(spacing)
-            if sketch is not None:
+                # native PartDesign: fully constrained sketch + Pad + pattern
+                old_tip = getattr(body, "Tip", None)
+                newfeat = _create_native_rib(doc, body, kind, f1, f2, frame,
+                                             thick, copies, spacing)
                 try:
-                    feat.Sketch = sketch
+                    if old_tip is not None and old_tip.ViewObject is not None \
+                            and newfeat.ViewObject is not None:
+                        _copy_appearance(old_tip.ViewObject, newfeat.ViewObject)
                 except Exception:
                     pass
-            if body is not None:
-                body.addObject(feat)
-            try:
-                from .rib_core import _set_view_object_ok
-                _set_view_object_ok(feat)
-            except Exception:
-                pass
-            doc.recompute()
-            if body is not None:
-                try:
-                    body.Tip = feat
-                except Exception:
-                    pass
-                doc.recompute()
                 FreeCAD.Console.PrintMessage(_tr(
                     "Additive rib between faces added to '{}'.").format(
                     body.Label) + "\n")
             else:
+                sketch = _make_rib_sketch(doc, None, "FaceRibSketch",
+                                          *frame, constrained=True)
+                if sketch is not None:
+                    _hide(sketch)
+                feat = doc.addObject("Part::FeaturePython", "FaceRib")
+                FaceRibFeature(feat)
+                ref1 = _ref_for(obj1, sub1, body)
+                ref2 = _ref_for(obj2, sub2, body)
+                feat.F1Ref = ref1
+                feat.F2Ref = ref2
+                feat.Thickness = thick
+                feat.Length1 = l1
+                feat.Length2 = l2
+                feat.Offset = offset
+                feat.Copies = int(copies)
+                feat.Reversed1 = bool(rev1)
+                feat.Reversed2 = bool(rev2)
+                feat.Reversed = bool(rev1) and bool(rev2)
+                if kind == "cylinder":
+                    feat.Angle = float(angle)
+                if kind in ("corner", "cylinder"):
+                    feat.ProfileType = shape
+                if kind == "corner":
+                    feat.Spacing = float(spacing)
+                if sketch is not None:
+                    try:
+                        feat.Sketch = sketch
+                    except Exception:
+                        pass
+                try:
+                    from .rib_core import _set_view_object_ok
+                    _set_view_object_ok(feat)
+                except Exception:
+                    pass
                 doc.recompute()
                 FreeCAD.Console.PrintMessage(
                     _tr("Rib between faces created.") + "\n")
-            newfeat = feat
+                newfeat = feat
+        except Exception as e:
+            FreeCAD.Console.PrintError(_tr("Rib between faces: {}").format(e) + "\n")
         finally:
             _remove_preview(restore=False)
             try:

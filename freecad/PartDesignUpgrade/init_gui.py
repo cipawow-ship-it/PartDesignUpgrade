@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""PartDesignUpgrade GUI init: registers a lightweight workbench and injects
-its three buttons into the Part Design Helper Features toolbar."""
+"""PartDesignUpgrade GUI init: registers a lightweight workbench. The buttons
+also appear in the standalone "AddOn Tools" toolbar group provided by the
+CollisionDetector addon and can be moved anywhere on the top bars."""
 
 import FreeCADGui as Gui
 
 from . import commands
-from .Manipulator import PartDesignUpgradeManipulator
 from .translations import tr as _tr
 
 
@@ -22,7 +22,6 @@ class PartDesignUpgradeWorkbench(Gui.Workbench):
             "PartDesignUpgrade_SubtractPipe",
             "PartDesignUpgrade_FaceRib",
             "PartDesignUpgrade_Cut",
-            "PartDesignUpgrade_Mirror",
             "PartDesignUpgrade_AutoMirror",
             "PartDesignUpgrade_Weight",
         ]
@@ -34,4 +33,3 @@ class PartDesignUpgradeWorkbench(Gui.Workbench):
 
 
 Gui.addWorkbench(PartDesignUpgradeWorkbench())
-Gui.addWorkbenchManipulator(PartDesignUpgradeManipulator())

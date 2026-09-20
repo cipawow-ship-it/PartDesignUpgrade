@@ -133,6 +133,14 @@ def _update_reference(body, planes, axes, point, offset):
         return
     doc = body.Document
     ref = doc.getObject(_REF_NAME)
+    try:
+        from . import symmetry as _sym
+        if ref is not None and _sym._is_referenced_by_transform(doc, ref):
+            # The datum belongs to a mirror that was already built: never
+            # delete it nor re-point it. The preview uses its own copy.
+            ref = None
+    except Exception:
+        pass
     if not any(list(planes) + list(axes) + [point]):
         if ref is not None:
             try:

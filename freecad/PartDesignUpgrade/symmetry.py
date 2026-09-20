@@ -20,6 +20,9 @@ from .translations import tr as _tr
 _PROP_GROUP = "Symmetry"
 _REF_NAME = "SymmetryRef"
 _TRANSFORM_NAME = "SymmetryTransform"
+# datum objects created by the addon's other features (pipe, rib, ...) are
+# helper geometry: they must never be mistaken for a symmetry reference
+_HELPER_DATUM_PREFIXES = ("Pipe", "FaceRib", "Rib", "AssemblyCut")
 
 # last choice recorded by the task panel, reused when re-enabling from the
 # floating window: {"kind": "plane"/"axis"/"point", "target": ..., "offset": ...}
@@ -29,6 +32,10 @@ _last_choice = None
 # operations use this plane; already-built symmetries keep their own datum,
 # which is left untouched (never repointed, never deleted).
 _active_ref_name = None
+
+# set when the symmetry panel is closed, so the next command run asks for a
+# brand new symmetry plane instead of reusing the previous reference
+_force_new_reference = False
 
 # (reference type, target) -> (datum TypeId, centering vector, normal)
 _AXIS_ROTATIONS = {
@@ -68,19 +75,63 @@ def _is_transform_feature(feat):
         and feat.TypeId not in _DATUM_TYPES
 
 
+def _owner_body(obj):
+    """PartDesign body owning obj, following InList links upward."""
+    if obj is None:
+        return None
+    seen = set()
+    stack = [obj]
+    while stack:
+        o = stack.pop()
+        if o is None:
+            continue
+        try:
+            key = o.Name
+        except Exception:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if o.TypeId == "PartDesign::Body":
+                return o
+        except Exception:
+            pass
+        try:
+            stack.extend(list(o.InList or []))
+        except Exception:
+            pass
+    return None
+
+
 def _active_body(doc):
-    try:
-        import FreeCADGui as Gui
-        b = Gui.activeBody()
-        if b is not None:
-            return b
-    except Exception:
-        pass
+    # the body the user selected wins, so a new symmetry reference is built on
+    # that body and not on the (first) active/first body of the document
     try:
         import FreeCADGui as Gui
         for o in Gui.Selection.getSelection():
             if o is not None and o.TypeId == "PartDesign::Body":
                 return o
+        for o in Gui.Selection.getSelection():
+            b = _owner_body(o)
+            if b is not None:
+                return b
+    except Exception:
+        pass
+    try:
+        import FreeCADGui as Gui
+        view = Gui.activeView()
+        if view is not None:
+            b = view.getActiveObject("pdbody")
+            if b is not None:
+                return b
+    except Exception:
+        pass
+    try:
+        import FreeCADGui as Gui
+        b = Gui.activeBody()
+        if b is not None:
+            return b
     except Exception:
         pass
     body = None
@@ -94,16 +145,86 @@ def _active_body(doc):
     return body
 
 
-def reset(body, doc):
-    """Remove any leftover symmetry reference and transform objects.
+def _sym_object_list(doc, prefix, body):
+    """Addon symmetry objects whose name starts with `prefix`, belonging to
+    `body` (or with no owner)."""
+    out = []
+    for o in list(doc.Objects):
+        if o is None:
+            continue
+        n = o.Name
+        if not (n == prefix or n.startswith(prefix)):
+            continue
+        owner = _owner_body(o)
+        if owner is not None and owner is not body:
+            continue
+        out.append(o)
+    return out
 
-    The mirror is only removed when nothing else in the body depends on it.
-    If later features (a sketch mapped on the mirrored face, a pocket, ...)
-    reference the transform, it is kept so the body is not destroyed.
+
+def _remove_object(body, doc, obj):
+    n = obj.Name
+    try:
+        body.removeObject(n)
+    except Exception:
+        pass
+    # Body.removeObject can only unparent the object; delete any
+    # leftover so it cannot stay as an out-of-scope orphan.
+    try:
+        if doc.getObject(n) is not None:
+            doc.removeObject(n)
+    except Exception:
+        pass
+
+
+def _is_referenced_by_transform(doc, datum):
+    """True when any addon mirror transform still uses `datum` as its plane
+    (MirrorPlane). Such datums must never be deleted nor re-pointed."""
+    if datum is None or doc is None:
+        return False
+    try:
+        for o in doc.Objects:
+            if o is None:
+                continue
+            n = o.Name
+            if n == _TRANSFORM_NAME or n.startswith(_TRANSFORM_NAME):
+                plane = getattr(o, "MirrorPlane", None)
+                if plane and getattr(plane, "__getitem__", None) \
+                        and plane[0] is datum:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def reset(body, doc, remove_mirror=True):
+    """Remove leftover symmetry reference and transform objects.
+
+    With remove_mirror=False only loose reference datums are cleaned up and an
+    executed mirror (its transform and the datum it references) is never
+    touched, so opening a new "Mirror (Symmetry)" dialog no longer deletes a
+    symmetry that was already built.
+
+    With remove_mirror=True the mirror is only removed when nothing else in
+    the body depends on it. If later features (a sketch mapped on the mirrored
+    face, a pocket, ...) reference the transform, it is kept so the body is
+    not destroyed. Only the symmetry objects that belong to `body` are
+    removed: the reference and transform of other bodies are left untouched,
+    so starting a symmetry on one body never deletes the symmetry of another.
     Returns True when removed (or there was nothing to remove), False when
     the mirror had to be kept because it is used by other features.
     """
-    transform = doc.getObject(_TRANSFORM_NAME)
+    if not remove_mirror:
+        for o in _sym_object_list(doc, _REF_NAME, body):
+            if _is_referenced_by_transform(doc, o):
+                continue
+            _remove_object(body, doc, o)
+        try:
+            doc.recompute()
+        except Exception:
+            pass
+        return True
+    transform = _find_transform(body) if body is not None else None
     if transform is not None and body.Tip is not transform:
         for feat in (getattr(body, "Group", []) or []):
             if feat is None or feat is transform:
@@ -128,19 +249,38 @@ def reset(body, doc):
                 body.Tip = prev
             except Exception:
                 pass
-    for o in list(doc.Objects):
-        if o is None:
+    # Remove the transforms first, then the datums that no longer reference
+    # them, so a mirror is never left half-broken (plane link dangling).
+    for o in _sym_object_list(doc, _TRANSFORM_NAME, body):
+        try:
+            if getattr(body, "Tip", None) is o:
+                continue
+        except Exception:
+            pass
+        _remove_object(body, doc, o)
+    for o in _sym_object_list(doc, _REF_NAME, body):
+        if _is_referenced_by_transform(doc, o):
             continue
-        n = o.Name
-        if n == _TRANSFORM_NAME or n == _REF_NAME \
-                or n.startswith(_TRANSFORM_NAME) or n.startswith(_REF_NAME):
-            try:
-                body.removeObject(n)
-            except Exception:
-                try:
-                    doc.removeObject(n)
-                except Exception:
-                    pass
+        _remove_object(body, doc, o)
+    try:
+        doc.recompute()
+    except Exception:
+        pass
+    # sync_visibility previously hid every real feature but the mirror tip;
+    # once the mirror is gone the body must show its (new) Tip again,
+    # otherwise the body looks empty in the 3D view.
+    try:
+        if body is not None and getattr(body, "Tip", None) is not None:
+            tip = body.Tip
+            if tip.ViewObject is not None:
+                tip.ViewObject.Visibility = True
+    except Exception:
+        pass
+    try:
+        if body is not None and body.ViewObject is not None:
+            body.ViewObject.Visibility = True
+    except Exception:
+        pass
     try:
         doc.recompute()
     except Exception:
@@ -189,8 +329,18 @@ def create_reference(body, ref_type, target, center, offset=0.0):
               two independent perpendicular movements. For a point it is a
               3-tuple (dx, dy, dz).
     """
+    global _force_new_reference
+    _force_new_reference = False
     try:
         bbox = body.Shape.BoundBox if body is not None else None
+        # Callers pass the centre read from body.Shape.BoundBox, which is in
+        # global coordinates. The datum is a child of the body, so its
+        # placement is body-local: undo the body transform first, otherwise a
+        # moved body yields a reference offset by its own displacement.
+        try:
+            center = body.Shape.Placement.inverse().multVec(center)
+        except Exception:
+            pass
         if ref_type == "plane":
             d = body.newObject("PartDesign::Plane", _REF_NAME)
             d.MapMode = "Deactivated"
@@ -306,7 +456,83 @@ def mirror_solid(body, doc, ref):
         return False
 
 
+def _rollback_transform(body, doc, transform, prev_tip):
+    """Remove a symmetry transform that produced an invalid shape and put the
+    body back on its previous tip, so later features are not built on a broken
+    Tip (which would make every following PartDesign operation fail)."""
+    name = None
+    try:
+        if transform is not None:
+            name = transform.Name
+    except Exception:
+        name = None
+    try:
+        if transform is not None:
+            try:
+                if body.Tip is transform:
+                    body.Tip = prev_tip
+            except Exception:
+                pass
+            try:
+                body.removeObject(transform)
+            except Exception:
+                pass
+        # Body.removeObject can merely unparent the feature (leaving it as an
+        # out-of-scope orphan); make sure it is really deleted from the doc.
+        if name:
+            still = doc.getObject(name)
+            if still is not None:
+                doc.removeObject(name)
+        try:
+            doc.recompute()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def _capture_view_color(obj):
+    """Remember the shape colour of obj's view so a new feature does not reset
+    the body to the default grey when the symmetry is applied."""
+    try:
+        vo = obj.ViewObject
+        if vo is None:
+            return None
+        return {
+            "ShapeColor": tuple(vo.ShapeColor),
+            "LineColor": tuple(getattr(vo, "LineColor", ()) or ()),
+            "Transparency": getattr(vo, "Transparency", None),
+        }
+    except Exception:
+        return None
+
+
+def _restore_view_color(objs, col):
+    if not col:
+        return
+    for obj in objs:
+        try:
+            vo = obj.ViewObject
+            if vo is None:
+                continue
+            if col.get("ShapeColor"):
+                vo.ShapeColor = col["ShapeColor"]
+            if col.get("LineColor"):
+                vo.LineColor = col["LineColor"]
+            if col.get("Transparency") is not None:
+                vo.Transparency = col["Transparency"]
+        except Exception:
+            pass
+    try:
+        import FreeCADGui as Gui
+        Gui.updateGui()
+    except Exception:
+        pass
+
+
 def _mirror_about_plane(body, doc, ref, features, originals=None):
+    prev_tip = body.Tip
+    color = _capture_view_color(body)
     tip = body.Tip
     if not _is_transform_feature(tip):
         tip = features[-1] if features else None
@@ -339,12 +565,14 @@ def _mirror_about_plane(body, doc, ref, features, originals=None):
         pass
     doc.recompute()
     t.Label = _tr("Mirror (symmetry)")
+    _restore_view_color((body, t), color)
     try:
         st = t.Shape
         valid = st is not None and not st.isNull() and st.isValid() and st.Solids
     except Exception:
         valid = False
     if not valid:
+        _rollback_transform(body, doc, t, prev_tip)
         _msg(_tr("Mirror failed: the mirrored shape is invalid."), error=True)
         return False
     try:
@@ -368,6 +596,8 @@ def _mirror_about_plane(body, doc, ref, features, originals=None):
 
 
 def _pattern_about_axis(body, doc, ref, features, originals=None):
+    prev_tip = body.Tip
+    color = _capture_view_color(body)
     sel = originals if originals is not None else features
     t = body.newObject("PartDesign::PolarPattern", _TRANSFORM_NAME)
     t.addProperty("App::PropertyBool", "SymmetryTransform", _PROP_GROUP, "")
@@ -382,6 +612,16 @@ def _pattern_about_axis(body, doc, ref, features, originals=None):
         pass
     doc.recompute()
     t.Label = _tr("Mirror (symmetry)")
+    _restore_view_color((body, t), color)
+    try:
+        st = t.Shape
+        valid = st is not None and not st.isNull() and st.isValid() and st.Solids
+    except Exception:
+        valid = False
+    if not valid:
+        _rollback_transform(body, doc, t, prev_tip)
+        _msg(_tr("Mirror failed: the mirrored shape is invalid."), error=True)
+        return False
     _msg(_tr(
         "Revolved the body 180 degrees around the symmetry axis "
         "(2 occurrences)."))
@@ -410,23 +650,37 @@ def _point_symmetry(body, doc, ref):
 # ---------------------------------------------------------------- manual sync
 
 
-def find_reference(doc):
+def find_reference(doc, body=None):
     """Find the addon symmetry reference datum in the document.
 
     The datum the panel is currently working on (if any) wins, so new mirror
     operations always use the reference the user just created. The scan falls
     back to the first addon datum (plane / line / point) in the document, or
     None when the user has not created one yet (single feature mirror, no
-    reference chosen)."""
+    reference chosen).
+
+    When `body` is given, only a reference that belongs to that body (or an
+    orphan one) is returned, so a symmetry on one body never picks up the
+    reference of another body."""
     if doc is None:
         return None
+    if _force_new_reference:
+        return None
+
+    def _ok(o):
+        if body is None:
+            return True
+        owner = _owner_body(o)
+        return owner is None or owner is body
+
+    _datums = ("Part::DatumPlane", "PartDesign::Plane",
+               "Part::DatumLine", "PartDesign::Line",
+               "Part::DatumPoint", "PartDesign::Point")
     if _active_ref_name:
         o = doc.getObject(_active_ref_name)
-        if o is not None:
+        if o is not None and _ok(o):
             try:
-                if o.TypeId in ("Part::DatumPlane", "PartDesign::Plane",
-                                "Part::DatumLine", "PartDesign::Line",
-                                "Part::DatumPoint", "PartDesign::Point"):
+                if o.TypeId in _datums:
                     return o
             except Exception:
                 pass
@@ -436,15 +690,19 @@ def find_reference(doc):
         n = o.Name
         if n == _REF_NAME or n == _TRANSFORM_NAME \
                 or n.startswith(_REF_NAME) or n.startswith(_TRANSFORM_NAME):
+            if not _ok(o):
+                continue
             try:
-                if o.TypeId in ("Part::DatumPlane", "PartDesign::Plane",
-                                "Part::DatumLine", "PartDesign::Line",
-                                "Part::DatumPoint", "PartDesign::Point"):
+                if o.TypeId in _datums:
                     return o
             except Exception:
                 pass
     for o in doc.Objects:
         if o is None:
+            continue
+        if o.Name.startswith(_HELPER_DATUM_PREFIXES):
+            continue
+        if not _ok(o):
             continue
         try:
             if o.TypeId in ("PartDesign::Plane", "PartDesign::Line",
@@ -607,6 +865,8 @@ def mirror_feature(doc, body, ref, feat):
                 return True
         except Exception:
             pass
+    prev_tip = body.Tip
+    color = _capture_view_color(body)
     try:
         if ref.TypeId in ("Part::DatumPlane", "PartDesign::Plane"):
             t = body.newObject("PartDesign::Mirrored", _TRANSFORM_NAME)
@@ -642,12 +902,14 @@ def mirror_feature(doc, body, ref, feat):
     except Exception:
         pass
     t.Label = _tr("Mirror (symmetry)")
+    _restore_view_color((body, t), color)
     try:
         st = t.Shape
         valid = st is not None and not st.isNull() and st.isValid() and st.Solids
     except Exception:
         valid = False
     if not valid:
+        _rollback_transform(body, doc, t, prev_tip)
         _msg(_tr("Mirror failed: the mirrored shape is invalid."), error=True)
         return False
     _msg(_tr("Mirrored the last operation around the symmetry plane "
@@ -667,7 +929,7 @@ def mirror_last_operation(doc, body):
     is a safe no-op (returns True without creating a duplicate)."""
     if body is None or doc is None:
         return False
-    ref = find_reference(doc)
+    ref = find_reference(doc, body)
     if ref is None:
         _msg(_tr("No symmetry reference found."), error=True)
         return False

@@ -41,6 +41,7 @@ class SymmetryPanel(QWidget):
         self._broken = False
         self._auto_enabled = False
         self._known_features = set()
+        self._failed_features = set()
         self._busy = False
 
         root = QVBoxLayout(self)
@@ -83,6 +84,7 @@ class SymmetryPanel(QWidget):
     def _on_mirror_last(self):
         if self.body is None or self.doc is None:
             return
+        self._sync_body_from_selection()
         symmetry.mirror_last_operation(self.doc, self.body)
         self._set_info()
 
@@ -96,9 +98,11 @@ class SymmetryPanel(QWidget):
     # --------------------------------------------------------------- auto
 
     def _start_auto(self):
+        self._sync_body_from_selection()
         self._known_features = set(
             f.Name for f in symmetry._real_features(self.body)) \
             if self.body is not None else set()
+        self._failed_features = set()
         self._auto_enabled = True
         self._timer.start(150)
         _auto_msg(_tr("Auto mirror is on."))
@@ -114,6 +118,7 @@ class SymmetryPanel(QWidget):
         if self.body is None or self.doc is None:
             self._stop_auto()
             return
+        self._sync_body_from_selection()
         try:
             if self.body.Name not in [o.Name for o in self.doc.Objects]:
                 self._stop_auto()
@@ -121,7 +126,19 @@ class SymmetryPanel(QWidget):
         except Exception:
             return
         try:
+            # never re-enter a running recompute: a recursive call is a no-op
+            # that leaves the shape unstable, so the mirror would be invalid.
+            # Wait for the next tick instead.
+            if getattr(self.doc, "Recomputing", False):
+                return
             self.doc.recompute()
+        except Exception:
+            pass
+        # Only mirror once the body is fully updated.
+        try:
+            state = self.body.State
+            if "Touched" in state or "Invalid" in state:
+                return
         except Exception:
             pass
         self._mirror_new_features()
@@ -132,27 +149,41 @@ class SymmetryPanel(QWidget):
     def _mirror_new_features(self):
         if self.body is None or self.doc is None:
             return
-        ref = symmetry.find_reference(self.doc)
+        ref = symmetry.find_reference(self.doc, self.body)
         if ref is None:
             return
-        current = set(f.Name for f in symmetry._real_features(self.body))
-        new_names = sorted(current - self._known_features)
-        if not new_names:
+        # mirror new features in body-tree order (not alphabetically) so a
+        # feature is never mirrored before the one it depends on
+        new_feats = [
+            f for f in symmetry._real_features(self.body)
+            if f.Name not in self._known_features
+            and f.Name not in self._failed_features]
+        if not new_feats:
             return
         self._busy = True
         try:
-            for name in new_names:
-                feat = self.doc.getObject(name)
-                if feat is None or not symmetry._is_transform_feature(feat):
+            for feat in new_feats:
+                if not symmetry._is_transform_feature(feat):
+                    self._known_features.add(feat.Name)
                     continue
                 try:
                     s = feat.Shape
-                    if s is None or s.isNull():
-                        continue
+                    if s is None or s.isNull() or not s.isValid() or not s.Solids:
+                        continue  # not built/stable yet: retry next tick
                 except Exception:
                     continue
-                symmetry.mirror_feature(self.doc, self.body, ref, feat)
-            self._known_features = current
+                try:
+                    tip = self.body.Tip
+                    ts = tip.Shape
+                    if tip is None or ts is None or ts.isNull() or not ts.isValid():
+                        continue  # body still rebuilding: retry next tick
+                except Exception:
+                    continue
+                if symmetry.mirror_feature(self.doc, self.body, ref, feat):
+                    self._known_features.add(feat.Name)
+                else:
+                    # do not retry a feature that genuinely cannot be mirrored
+                    self._failed_features.add(feat.Name)
         finally:
             self._busy = False
 
@@ -192,6 +223,27 @@ class SymmetryPanel(QWidget):
         self._known_features = set(
             f.Name for f in symmetry._real_features(body)) \
             if body is not None else set()
+        self._set_info()
+
+    def _sync_body_from_selection(self):
+        """Follow the body the user selected, so the panel works on it even
+        when it was opened on another body."""
+        if self.doc is None:
+            return
+        try:
+            import FreeCADGui as Gui
+            if not Gui.Selection.getSelection():
+                return
+            b = symmetry._active_body(self.doc)
+        except Exception:
+            return
+        if b is None or b is self.body:
+            return
+        self.body = b
+        self._broken = False
+        self._known_features = set(
+            f.Name for f in symmetry._real_features(b))
+        self._failed_features = set()
         self._set_info()
 
     def closeEvent(self, event):
@@ -268,7 +320,11 @@ def _really_hidden_check():
         return
     if _panel is not None:
         _panel._stop_auto()
+        # Closing the panel ends the symmetry session: the next time the
+        # command is run, ask for a new symmetry plane instead of silently
+        # reusing the previous one. The geometry is left untouched.
         try:
+            symmetry._force_new_reference = True
             symmetry.hide_reference(_panel.doc)
         except Exception:
             pass

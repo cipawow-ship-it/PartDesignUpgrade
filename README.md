@@ -40,8 +40,8 @@ Extends the **PartDesign** workbench with seven helpers:
   using a density picker (metals, plastics, wood, glass, concrete, ... or a
   custom value in kg/m³).
 
-The seven buttons are injected into the **Part Design Helper Features**
-toolbar.
+Together with the collision detector from the companion **CollisionDetector**
+addon, the buttons form a single seven-button movable **AddOn Tools** toolbar:
 
 ## Installation
 
@@ -111,6 +111,10 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 
 ## Screenshots
 
+### AddOn Tools toolbar
+
+![The seven toolbar buttons (Create Pipe, Subtractive Pipe, Rib Between Faces, Assembly Cut, Mirror (Symmetry), Collision detector, Weight / Volume)](images/addon-tools-toolbar.png)
+
 ### Create Pipe (additive)
 
 ![Create Pipe (additive)](images/create-pipe.png)
@@ -134,6 +138,14 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 ### Weight / Volume
 
 ![Weight / Volume](images/weight-volume.png)
+
+### Collision detector
+
+![Collision detector](images/collision-detection.png)
+
+The **Collision detector** button (from the companion **CollisionDetector**
+addon) makes all bodies transparent and highlights the overlapping parts in
+red, then re-runs automatically after every change.
 
 ## Compatibility
 

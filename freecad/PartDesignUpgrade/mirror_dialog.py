@@ -250,6 +250,7 @@ class SymmetryTaskPanel:
         self.doc = doc
         self.body = body
         self.center = center
+        self._accepted = False
         self.mirror_panel = _MirrorPanel(doc, body, center)
         self.mirror_panel.setWindowTitle(_tr("Symmetry"))
         self.form = self.mirror_panel
@@ -285,6 +286,7 @@ class SymmetryTaskPanel:
         FreeCAD.Console.PrintMessage(
             "Symmetry reference result: {}\n".format(ok))
         if ok:
+            self._accepted = True
             # Keep the panel inert: the datum plane is live in the tree, the
             # symmetry is applied only via the panel buttons / auto mirror.
             self._open_dock(False)
@@ -297,12 +299,18 @@ class SymmetryTaskPanel:
         return True
 
     def reject(self):
+        # A cancelled dialog must not silently reuse an old reference on the
+        # next run: ask for a brand new symmetry plane again. The transient
+        # datum created for the live preview is removed.
+        symmetry._force_new_reference = True
         self.mirror_panel.cleanup()
         import FreeCADGui
         FreeCADGui.Control.closeDialog()
         return True
 
     def closing(self):
+        if not self._accepted:
+            symmetry._force_new_reference = True
         return True
 
 
@@ -314,7 +322,9 @@ def run_mirror_dialog(doc, body):
         import FreeCAD
         center = FreeCAD.Vector(0, 0, 0)
     import FreeCADGui
-    symmetry.reset(body, doc)
+    # Keep any mirror already executed on this body: only loose datums are
+    # cleaned up, so opening the dialog again does not delete the old one.
+    symmetry.reset(body, doc, remove_mirror=False)
     panel = SymmetryTaskPanel(doc, body, center)
     FreeCADGui.Control.showDialog(panel)
     doc.recompute()

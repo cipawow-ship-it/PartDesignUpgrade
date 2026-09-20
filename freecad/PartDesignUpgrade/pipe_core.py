@@ -46,6 +46,21 @@ def _build_frame(tangent):
     return n1, n2
 
 
+def _frame_rotation(n1, n2, tan):
+    """Rotation whose local X/Y/Z axes map to *n1*/*n2*/*tan*.
+
+    Used to orient the native profile plane so its X/Y match the preview
+    frame from _build_frame; otherwise polygons come out rotated.
+    """
+    t = FreeCAD.Vector(tan)
+    if t.Length > 1e-9:
+        t.normalize()
+    r0 = FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), t)
+    x0 = r0.multVec(FreeCAD.Vector(1, 0, 0))
+    ang = math.atan2(t.dot(x0.cross(n1)), x0.dot(n1))
+    return FreeCAD.Rotation(t, math.degrees(ang)).multiply(r0)
+
+
 def _path_tangent(wire):
     """Unit tangent direction at the start of a path wire."""
     for e in wire.OrderedEdges:
@@ -339,7 +354,7 @@ def _inner_dimension(ptype, dim, wall):
     return 2.0 * inner_apothem * math.tan(math.pi / sides)
 
 
-def _create_native_pipe(doc, body, wire, profile_type, dimension, rotation_deg, offset, corner_name, wall_thickness, subtractive, spine_refs=None):
+def _create_native_pipe(doc, body, wire, profile_type, dimension, rotation_deg, offset, corner_name, wall_thickness, subtractive, spine_refs=None, wire_frame=None):
     """Create a native PartDesign pipe on a body.
 
     The profile is drawn 'perpendicular to the path': a datum plane is placed
@@ -351,12 +366,35 @@ def _create_native_pipe(doc, body, wire, profile_type, dimension, rotation_deg, 
     passed unchanged to the native pipe (a bare (object, [names]) when a
     single object owns all selected edges). No carrier object is created.
 
+    *wire_frame* is the document placement of the frame in which *wire* is
+    expressed: a placement when the path comes from another PartDesign body
+    (its shape is body-local), or None when the wire is already in global
+    coordinates. It is used to bring the datum plane (a child of *body*, hence
+    in body-local coordinates) onto the real path start.
+
     Returns the last operation (the feature that should become the Tip).
     """
     tan = _path_tangent(wire)
     if tan is None:
         raise ValueError(_tr("Could not determine the direction of the path"))
     base = wire.OrderedEdges[0].Vertexes[0].Point + (offset or FreeCAD.Vector(0, 0, 0))
+
+    # profile frame exactly as the preview computes it (in the wire's frame)
+    n1, n2 = _build_frame(tan)
+
+    # The wire may live in the target body's frame, in another body's frame or
+    # in global coordinates; the datum plane is always a child of *body*, so
+    # express base/tangent/frame in body-local coordinates before placing it.
+    if body is not None:
+        try:
+            conv = body.getGlobalPlacement().inverse().multiply(
+                wire_frame if wire_frame is not None else FreeCAD.Placement())
+            base = conv.multVec(base)
+            tan = conv.Rotation.multVec(tan)
+            n1 = conv.Rotation.multVec(n1)
+            n2 = conv.Rotation.multVec(n2)
+        except Exception:
+            pass
 
     created = []
 
@@ -383,7 +421,7 @@ def _create_native_pipe(doc, body, wire, profile_type, dimension, rotation_deg, 
         created.append(plane.Name)
         body.addObject(plane)
         plane.MapMode = "Deactivated"
-        plane.Placement = FreeCAD.Placement(base, FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), tan))
+        plane.Placement = FreeCAD.Placement(base, _frame_rotation(n1, n2, tan))
         doc.recompute()
 
         def _profile_sketch(name):
@@ -401,8 +439,12 @@ def _create_native_pipe(doc, body, wire, profile_type, dimension, rotation_deg, 
 
         # 3) spine: the pre-selected path edges, unchanged. A single object is
         #    a bare (object, [edge names]) reference (the user-proven form);
-        #    several objects become a list of such pairs. No extra carrier
-        #    object is needed either way.
+        #    several objects become a list of such pairs. A sketch used whole
+        #    as path is a bare (sketch, []) reference. No extra carrier object
+        #    is needed either way.
+        if not spine_refs:
+            raise ValueError(
+                _tr("No path was given to the pipe: select a sketch or edges."))
         if len(spine_refs) == 1:
             spine = (spine_refs[0][0], list(spine_refs[0][1]))
         else:
@@ -834,7 +876,7 @@ def create_pipe(subtractive=False):
         body = _parent_body(edge_refs[0][0], doc)
     if body is None:
         try:
-            body = Gui.activeBody()
+            body = Gui.activeView().getActiveObject("pdbody")
         except Exception:
             body = None
     if body is None:
@@ -842,6 +884,30 @@ def create_pipe(subtractive=False):
         bodies = [o for o in doc.Objects if o.TypeId == "PartDesign::Body"]
         if len(bodies) == 1:
             body = bodies[0]
+
+    # path reference(s) and the frame the path wire is expressed in. A path
+    # drawn in another PartDesign body has body-local coordinates, a standalone
+    # sketch/shape has global coordinates; both must be brought into the target
+    # body's frame before the datum plane (a body child) is placed on them.
+    if edge_refs:
+        path_refs = edge_refs
+    elif sketch is not None:
+        path_refs = [(sketch, [])]
+    else:
+        path_refs = None
+    _src = sketch if sketch is not None else (edge_refs[0][0] if edge_refs else None)
+    _src_body = _parent_body(_src, doc) if _src is not None else None
+    wire_frame = _src_body.getGlobalPlacement() if _src_body is not None else None
+
+    def _to_global(shape, frame):
+        if shape is None or frame is None:
+            return shape
+        try:
+            sh = shape.copy()
+            sh.transformShape(frame.toMatrix())
+            return sh
+        except Exception:
+            return shape
 
     from .PipeDialog import PipeProfilePanel
 
@@ -863,14 +929,16 @@ def create_pipe(subtractive=False):
             offset = _offset_from_dialog(tan, off_xy[0], off_xy[1])
             raw = build_pipe_from_wire(wire, ptype, dim, math.radians(rot_deg), offset,
                                        _CORNER_MODES.get(corner, 1), thick)
+            raw = _to_global(raw, wire_frame)
             if mode != "tool" and body is not None:
                 tip = getattr(body, "Tip", None)
                 if tip is not None and tip.Shape is not None and not tip.Shape.isNull():
                     try:
+                        tip_shape = _to_global(tip.Shape, body.getGlobalPlacement())
                         if subtractive:
-                            raw = tip.Shape.cut(raw)
+                            raw = tip_shape.cut(raw)
                         else:
-                            raw = tip.Shape.fuse(raw)
+                            raw = tip_shape.fuse(raw)
                     except Exception:
                         pass
             return _refine(raw)
@@ -979,7 +1047,7 @@ def create_pipe(subtractive=False):
                 newfeat = _create_native_pipe(
                     doc, body, wire, ptype, dim, rot_deg,
                     offset, corner, thick, subtractive,
-                    spine_refs=edge_refs or None)
+                    spine_refs=path_refs, wire_frame=wire_frame)
                 doc.recompute()
                 try:
                     body.Tip = newfeat

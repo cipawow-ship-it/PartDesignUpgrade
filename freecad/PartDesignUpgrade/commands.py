@@ -127,49 +127,6 @@ class _CutCommand(_BaseCommand):
         assembly_cut()
 
 
-def _mirror_body():
-    import FreeCADGui as Gui
-    doc = FreeCAD.ActiveDocument
-    body = None
-    try:
-        body = Gui.activeBody()
-    except Exception:
-        body = None
-    if body is None:
-        for se in Gui.Selection.getSelection():
-            if se is not None and se.TypeId == "PartDesign::Body":
-                body = se
-                break
-    if body is None and doc is not None:
-        for o in doc.Objects:
-            if o is not None and o.TypeId == "PartDesign::Body":
-                if body is not None:
-                    return None
-                body = o
-    return body
-
-
-class _SymmetryCommand(_BaseCommand):
-    def __init__(self):
-        super().__init__({
-            "MenuText": _tr("Mirror (Symmetry)"),
-            "ToolTip": _tr("Mirror the solid around a plane, axis or point selected in a dialog"),
-            "Pixmap": _icon("Mirror_icon.svg"),
-            "StatusTip": _tr("Mirror the solid around the reference chosen in the dialog"),
-        })
-
-    def IsActive(self):
-        return _mirror_body() is not None
-
-    def Activated(self):
-        body = _mirror_body()
-        if body is None:
-            return
-        doc = body.Document
-        from .mirror_dialog import run_mirror_dialog
-        run_mirror_dialog(doc, body)
-
-
 class _AutoSymmetryCommand(_BaseCommand):
     def __init__(self):
         super().__init__({
@@ -183,7 +140,7 @@ class _AutoSymmetryCommand(_BaseCommand):
     def IsActive(self):
         return FreeCAD.ActiveDocument is not None
 
-    def Activated(self):
+    def Activated(self, arg=0):
         from .symmetry import _active_body, find_reference
         doc = FreeCAD.ActiveDocument
         if doc is None:
@@ -191,7 +148,7 @@ class _AutoSymmetryCommand(_BaseCommand):
         body = _active_body(doc)
         if body is None:
             return
-        if find_reference(doc) is None:
+        if find_reference(doc, body) is None:
             from .mirror_dialog import run_mirror_dialog
             run_mirror_dialog(doc, body)
             return
@@ -231,7 +188,6 @@ def _get_commands():
         ("PartDesignUpgrade_SubtractPipe", _SubtractPipeCommand()),
         ("PartDesignUpgrade_FaceRib", _FaceRibCommand()),
         ("PartDesignUpgrade_Cut", _CutCommand()),
-        ("PartDesignUpgrade_Mirror", _SymmetryCommand()),
         ("PartDesignUpgrade_AutoMirror", _AutoSymmetryCommand()),
         ("PartDesignUpgrade_Weight", _WeightCommand()),
     ]

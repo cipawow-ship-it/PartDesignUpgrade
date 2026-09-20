@@ -233,6 +233,13 @@ def _find_intersecting_bodies(doc, sketch, bodies):
 def _create_binder_in_body(doc, src_sketch, target_body):
     binder = target_body.newObject("PartDesign::SubShapeBinder", src_sketch.Label + "_Binder")
     binder.Support = [(src_sketch, "")]
+    try:
+        binder.Relative = False
+    except Exception:
+        pass
+    binder.Placement = target_body.getGlobalPlacement().inverse().multiply(
+        src_sketch.getGlobalPlacement()
+    )
     doc.recompute()
     try:
         binder.ViewObject.Visibility = False
@@ -248,7 +255,9 @@ def _copy_sketch_into_body(doc, src_sketch, target_body):
         copied = geo.copy()
         geo_list.append(copied)
     new_sketch.addGeometry(geo_list, False)
-    new_sketch.Placement = src_sketch.Placement.copy()
+    new_sketch.Placement = target_body.getGlobalPlacement().inverse().multiply(
+        src_sketch.getGlobalPlacement()
+    )
     doc.recompute()
     try:
         new_sketch.ViewObject.Visibility = False
