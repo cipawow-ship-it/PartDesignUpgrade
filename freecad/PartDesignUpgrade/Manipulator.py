@@ -4,7 +4,8 @@
 The addon defines no workbench of its own: this manipulator adds its buttons to
 Part Design's own "Part Design Helper Features" toolbar and to the Part Design
 menu, so they sit next to the stock PartDesign tools and the user never has to
-switch workbench.
+switch workbench. The seven commands are the six modelling helpers plus the
+assembly collision detector.
 
 A manipulator runs every time a workbench is activated. The targets used here
 only exist in Part Design, and an operation whose target cannot be found is
@@ -17,6 +18,7 @@ _COMMANDS = [
     "PartDesignUpgrade_FaceRib",
     "PartDesignUpgrade_Cut",
     "PartDesignUpgrade_AutoMirror",
+    "PartDesignUpgrade_Collision",
     "PartDesignUpgrade_Weight",
 ]
 

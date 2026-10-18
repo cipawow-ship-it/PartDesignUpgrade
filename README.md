@@ -1,7 +1,6 @@
 # PartDesignUpgrade
 
-Extends the **PartDesign** workbench with six helpers (the seventh button,
-*Collision detector*, comes from the companion **CollisionDetector** addon):
+Extends the **PartDesign** workbench with seven helpers:
 
 - **Create Pipe** — sweep a parametric profile (circle, square, triangle,
   pentagon, hexagon, octagon) along a sketch or a set of edges. Supports
@@ -42,10 +41,7 @@ Extends the **PartDesign** workbench with six helpers (the seventh button,
   custom value in kg/m³).
 - **Collision Detector** — makes every body transparent and highlights the
   overlapping parts in red, re-running automatically after every change.
-  Provided by the companion **CollisionDetector** addon.
-
-Together with the **CollisionDetector** addon, the buttons form a single
-movable **AddOn Tools** toolbar that can be dragged anywhere on the top bars:
+  The report appears in a dock window on the left.
 
 ## Installation
 
@@ -114,8 +110,8 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
    the latest feature. Untick **Auto mirror** (or close the panel) to stop.
 
 ### Collision detector
-1. With a document open, click **Collision Detector** in the **AddOn Tools**
-   toolbar.
+1. With a document open, click **Collision Detector** in the
+   **Part Design Helper Features** toolbar.
 2. All bodies become transparent and the overlapping parts are highlighted in
    red.
 3. The check runs again automatically after every change to the document; click
@@ -127,9 +123,9 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 
 ## Screenshots
 
-### AddOn Tools toolbar
+### The helper buttons
 
-![The toolbar buttons: Create Pipe, Subtractive Pipe, Rib Between Faces, Assembly Cut, Automatic symmetry, Weight / Volume and the Collision detector button from the companion addon](images/addon-tools-toolbar.png)
+![The seven toolbar buttons: Create Pipe, Subtractive Pipe, Rib Between Faces, Assembly Cut, Automatic symmetry, Collision Detector and Weight / Volume](images/addon-tools-toolbar.png)
 
 ### Create Pipe (additive)
 
@@ -159,9 +155,8 @@ Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 
 ![Collision detector](images/collision-detection.png)
 
-The **Collision detector** button (from the companion **CollisionDetector**
-addon) makes all bodies transparent and highlights the overlapping parts in
-red, then re-runs automatically after every change.
+The **Collision detector** button makes all bodies transparent and highlights
+the overlapping parts in red, then re-runs automatically after every change.
 
 ## Compatibility
 

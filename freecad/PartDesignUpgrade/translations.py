@@ -246,6 +246,12 @@ _TRANSLATIONS = _TRANSLATIONS = {
         'Shape:': 'Forma:',
         'The native pipe could not be built on this path (fatal error). Use a single chain of connected edges, or change the corner transition or profile size.': "Il tubo nativo non può essere creato su questo percorso (errore fatale). Usa una singola catena di bordi collegati, oppure modifica la transizione d'angolo o la dimensione del profilo.",
         'Unsupported reference for a single operation.': 'Riferimento non supportato per una singola operazione.',
+        'Collision Detector': 'Rilevatore di collisioni',
+        'Toggle the Collision Detector: all bodies become transparent and the overlapping parts are highlighted in red. Runs again automatically after every change.': 'Attiva o disattiva il rilevatore di collisioni: tutti i corpi diventano trasparenti e le parti sovrapposte sono evidenziate in rosso. Il controllo viene rieseguito automaticamente dopo ogni modifica.',
+        "Turn the assembly collision detector on or off": "Attiva o disattiva il rilevatore di collisioni dell'assieme",
+        'Switch the detector on (the Collision Detector button) to start.': 'Attiva il rilevatore (pulsante Collision Detector) per iniziare.',
+        'No collisions ({0} bodies checked).': 'Nessuna collisione ({0} corpi controllati).',
+        'Collisions: {0}': 'Collisioni: {0}',
     },
     'fr': {
         'PartDesign helpers: pipe, subtractive pipe, rib, assembly cut, symmetry mirror, weight/volume': 'Aides PartDesign : tube, tube soustractif, nervure, coupe d’assemblage, miroir de symétrie, poids/volume',

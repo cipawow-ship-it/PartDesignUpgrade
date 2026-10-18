@@ -182,6 +182,32 @@ class _WeightCommand(_BaseCommand):
         weight_volume()
 
 
+class _CollisionCommand(_BaseCommand):
+    """Toggle the assembly collision detector (part of this addon)."""
+
+    def __init__(self):
+        super().__init__({
+            "MenuText": _tr("Collision Detector"),
+            "ToolTip": _tr("Toggle the Collision Detector: all bodies become transparent and the overlapping parts are highlighted in red. Runs again automatically after every change."),
+            "Pixmap": _icon("CollisionDetector.png"),
+            "StatusTip": _tr("Turn the assembly collision detector on or off"),
+            "Checkable": True,
+        })
+
+    def IsChecked(self):
+        from . import collision_core
+        return collision_core.is_active()
+
+    def Activated(self, arg=0):
+        from . import collision_core
+        collision_core.toggle()
+        try:
+            # Keep the name in sync with collision_core._CMD_NAME.
+            Gui.updateGuiCommand("PartDesignUpgrade_Collision")
+        except Exception:
+            pass
+
+
 def _get_commands():
     return [
         ("PartDesignUpgrade_Pipe", _PipeCommand()),
@@ -190,6 +216,7 @@ def _get_commands():
         ("PartDesignUpgrade_Cut", _CutCommand()),
         ("PartDesignUpgrade_AutoMirror", _AutoSymmetryCommand()),
         ("PartDesignUpgrade_Weight", _WeightCommand()),
+        ("PartDesignUpgrade_Collision", _CollisionCommand()),
     ]
 
 
