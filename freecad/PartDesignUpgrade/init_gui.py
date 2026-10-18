@@ -33,10 +33,3 @@ class PartDesignUpgradeWorkbench(Gui.Workbench):
 
 
 Gui.addWorkbench(PartDesignUpgradeWorkbench())
-
-
-# Remove the toolbar/command of the standalone legacy AssemblyCut addon when it
-# is still installed, so the user does not end up with two "Assembly Cut"
-# buttons running two code paths.
-from . import compat as _compat
-_compat.schedule()
