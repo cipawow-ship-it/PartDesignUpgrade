@@ -20,10 +20,9 @@
     <url type="bugtracker">https://github.com/cipawow-ship-it/PartDesignUpgrade/issues</url>
 
     <content>
-        <workbench>
-            <classname>PartDesignUpgradeWorkbench</classname>
-            <subdirectory>./</subdirectory>
-        </workbench>
+        <!-- No workbench of its own: the commands are contributed to the Part
+             Design workbench by a workbench manipulator. -->
+        <other/>
     </content>
 
 </package>

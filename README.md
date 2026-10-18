@@ -49,6 +49,11 @@ movable **AddOn Tools** toolbar that can be dragged anywhere on the top bars:
 
 ## Installation
 
+The addon is **not a workbench**: it adds no entry to the workbench switcher.
+Its buttons are added to the **Part Design Helper Features** toolbar and to the
+**Part Design** menu of the Part Design workbench, so they are always at hand
+while modelling and you never have to switch workbench.
+
 Use the FreeCAD Addon Manager (Tools → Addon manager) and search for
 *PartDesignUpgrade*, or clone this repository into your user Mod directory:
 
