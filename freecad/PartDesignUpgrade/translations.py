@@ -248,7 +248,7 @@ _TRANSLATIONS = _TRANSLATIONS = {
         'Unsupported reference for a single operation.': 'Riferimento non supportato per una singola operazione.',
         'Collision Detector': 'Rilevatore di collisioni',
         'Toggle the Collision Detector: all bodies become transparent and the overlapping parts are highlighted in red. Runs again automatically after every change.': 'Attiva o disattiva il rilevatore di collisioni: tutti i corpi diventano trasparenti e le parti sovrapposte sono evidenziate in rosso. Il controllo viene rieseguito automaticamente dopo ogni modifica.',
-        "Turn the assembly collision detector on or off": "Attiva o disattiva il rilevatore di collisioni dell'assieme",
+        'Turn the assembly collision detector on or off': 'Attiva o disattiva il rilevatore di collisioni dell''assieme',
         'Switch the detector on (the Collision Detector button) to start.': 'Attiva il rilevatore (pulsante Collision Detector) per iniziare.',
         'No collisions ({0} bodies checked).': 'Nessuna collisione ({0} corpi controllati).',
         'Collisions: {0}': 'Collisioni: {0}',
