@@ -6,11 +6,11 @@ import FreeCADGui as Gui
 
 from .translations import tr as _tr
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+_ICON_DIR = os.path.join(os.path.dirname(__file__), "resources", "icons")
 
 
 def _icon(name):
-    return os.path.join(_ROOT, "Resources", "Icons", name)
+    return os.path.join(_ICON_DIR, name)
 
 
 class _BaseCommand:
